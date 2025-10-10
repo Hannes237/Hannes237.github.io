@@ -422,6 +422,49 @@ function loadRoutine(key, isReset = false) {
     }
 }
 
+// --- Custom Workouts Integration ---
+const CUSTOM_STORAGE_KEY = 'customWorkoutsV1';
+
+function loadCustomWorkoutsFromStorage() {
+    try {
+        const raw = localStorage.getItem(CUSTOM_STORAGE_KEY);
+        const list = raw ? JSON.parse(raw) : [];
+        return Array.isArray(list) ? list : [];
+    } catch (e) {
+        console.warn('Failed to load custom workouts:', e);
+        return [];
+    }
+}
+
+function ensureCustomWorkoutsInRoutinesAndSelector() {
+    const customs = loadCustomWorkoutsFromStorage();
+    const existingOptions = new Set(Array.from(routineSelector.options).map(o => o.value));
+
+    customs.forEach(w => {
+        const key = `custom:${w.id}`;
+        // Add to in-memory routines map if not present
+        if (!workoutRoutines[key]) {
+            workoutRoutines[key] = {
+                name: w.name || 'Custom Workout',
+                exercises: (w.exercises || []).map(ex => ({
+                    name: ex.name,
+                    duration: Number(ex.duration) || 0,
+                    color: 'bg-neutral',
+                    ...(ex.sets ? { sets: Number(ex.sets) } : {})
+                }))
+            };
+        }
+        // Add option to selector if not present
+        if (!existingOptions.has(key)) {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = `${w.name}`;
+            routineSelector.appendChild(opt);
+            existingOptions.add(key);
+        }
+    });
+}
+
 // --- Event Listeners and Initialization ---
 
 startButton.addEventListener('click', toggleTimer);
@@ -442,6 +485,8 @@ interSetBreakInput.addEventListener('change', () => {
 
 // Initialize the app when the window loads
 window.onload = () => {
-     // Set the initial routine based on the selector's default value
+    // First, integrate any custom workouts created on the Manage Workouts page
+    ensureCustomWorkoutsInRoutinesAndSelector();
+    // Then set the initial routine based on the selector's default value
     loadRoutine(routineSelector.value);
 };

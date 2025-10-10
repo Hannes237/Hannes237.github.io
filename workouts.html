@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manage Workouts</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <header class="bg-white shadow">
+    <div class="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+      <h1 class="text-2xl font-extrabold color-primary">Manage Workouts</h1>
+      <a href="index.html" class="text-sm bg-primary text-white px-4 py-2 rounded-full shadow hover:shadow-md">Back to Timer</a>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+    <!-- Storage Info -->
+    <div class="md:col-span-3 mb-4">
+      <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-xl px-4 py-3">
+        Workouts you create here are saved locally in your browser on this device (using local storage).
+        They are not uploaded or synced. If you clear your browser/site data or use a different device or browser,
+        these workouts will not be available there.
+      </div>
+    </div>
+    <!-- Existing Workouts -->
+    <section class="md:col-span-1">
+      <div class="bg-white rounded-2xl shadow p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-bold color-primary">Your Workouts</h2>
+          <button id="new-workout-btn" class="text-xs bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full hover:bg-emerald-200">New</button>
+        </div>
+        <ul id="workout-list" class="space-y-2 text-sm">
+          <!-- Populated by JS -->
+        </ul>
+      </div>
+    </section>
+
+    <!-- Editor -->
+    <section class="md:col-span-2">
+      <div class="bg-white rounded-2xl shadow p-6">
+        <div class="mb-4">
+          <label class="block text-sm font-semibold mb-1" for="workout-name">Workout Name</label>
+          <input id="workout-name" type="text" placeholder="e.g., Upper Body Strength"
+                 class="w-full p-3 border border-gray-300 rounded-xl focus:ring-4 focus:ring-emerald-300 focus:border-emerald-500" />
+        </div>
+
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-semibold">Exercises</h3>
+          <button id="add-exercise-btn" class="text-sm bg-emerald-500 text-white px-3 py-1 rounded-full shadow hover:shadow-md">Add Exercise</button>
+        </div>
+
+        <!-- Bulk Import -->
+        <div class="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+          <div class="flex flex-col md:flex-row md:items-end gap-3">
+            <div class="flex-1">
+              <label class="block text-xs font-semibold mb-1" for="import-text">Paste CSV or JSON</label>
+              <textarea id="import-text" rows="3" class="w-full p-2 border border-emerald-200 rounded-lg" placeholder="CSV: title,sets,duration&#10;Push-ups,3,30&#10;&#10;JSON: [{&quot;title&quot;:&quot;Push-ups&quot;,&quot;sets&quot;:3,&quot;duration&quot;:30}]&#10;"></textarea>
+            </div>
+            <div class="shrink-0 md:w-56">
+              <label class="block text-xs font-semibold mb-1" for="import-file">Or choose file (.csv or .json)</label>
+              <input id="import-file" type="file" accept=".csv,.json,application/json,text/csv" class="block w-full text-sm" />
+              <div class="mt-2 flex gap-2">
+                <button id="import-csv-btn" class="text-xs bg-emerald-600 text-white px-3 py-1 rounded-full">Import CSV</button>
+                <button id="import-json-btn" class="text-xs bg-emerald-600 text-white px-3 py-1 rounded-full">Import JSON</button>
+              </div>
+              <p class="mt-2 text-[11px] text-emerald-800">CSV columns: title,name,sets,duration (header optional). JSON: array of objects with keys name/title, duration, sets.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-gray-600">
+                <th class="py-2 pr-2">Name</th>
+                <th class="py-2 pr-2 w-28">Duration (s)</th>
+                <th class="py-2 pr-2 w-28">Sets</th>
+                <th class="py-2 w-24">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="exercise-rows">
+              <!-- Rows populated by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="flex items-center justify-between mt-6">
+          <button id="delete-workout-btn" class="text-sm text-red-600 px-3 py-2 rounded-lg hover:bg-red-50 hidden">Delete Workout</button>
+          <div class="ml-auto space-x-2">
+            <button id="save-workout-btn" class="bg-primary text-white px-5 py-2 rounded-full font-semibold shadow hover:shadow-md">Save Workout</button>
+          </div>
+        </div>
+        <p id="status-msg" class="mt-3 text-sm text-gray-600"></p>
+      </div>
+    </section>
+  </main>
+
+  <script src="workouts.js" defer></script>
+</body>
+</html>

@@ -5,23 +5,63 @@ body {
     min-height: 100vh;
 }
 
-/* Custom Tailwind Configuration - SWAPPED COLORS */
-/* Primary (Header, Button) is now Emerald */
-.color-primary { color: #10b981; } /* Emerald 500 (New Primary) */
-.bg-primary { background-color: #10b981; }
-/* Active (Highlight, Complete) is now Indigo */
-.bg-active { background-color: #4338ca; } /* Indigo 700 (New Active) */
-.text-active { color: #4338ca; }
-.bg-neutral { background-color: #fcd34d; } /* Amber 300 - remains the same */
+/* App Color Scheme */
+/* Primary (brand) */
+.color-primary { color: #5E1675; }
+.bg-primary { background-color: #5E1675; }
+.border-primary { border-color: #5E1675; }
+
+/* Active (highlight/current) */
+.bg-active { background-color: #EE4266; }
+.text-active { color: #EE4266; }
+
+/* Neutral/work block */
+.bg-neutral { background-color: #FFD23F; }
 
 /* Keyframe for the blinking effect */
 @keyframes blink-fade {
     0%, 100% { background-color: #f9fafb; /* Light Gray/Off-White */ }
-    50% { background-color: #4338ca; } /* New Active color (Indigo) */
+    50% { background-color: #EE4266; } /* Active color */
 }
 
 .page-blink {
     animation: blink-fade 0.5s infinite alternate;
+}
+
+/* Map Tailwind emerald utilities to our green #337357 palette */
+/* Greens scale (approx): 50/100/200/300/400/500/600/800 */
+:root {
+    --g50:  #EEF7F2;
+    --g100: #DDEFE5;
+    --g200: #B9DFCC;
+    --g300: #95CFB2;
+    --g400: #6FB299;
+    --g500: #337357;
+    --g600: #2C634B;
+    --g800: #1F4634;
+}
+
+/* Backgrounds */
+.bg-emerald-50 { background-color: var(--g50) !important; }
+.bg-emerald-100 { background-color: var(--g100) !important; }
+.bg-emerald-200 { background-color: var(--g200) !important; }
+.bg-emerald-500 { background-color: var(--g500) !important; }
+.bg-emerald-600 { background-color: var(--g600) !important; }
+
+/* Text colors */
+.text-emerald-400 { color: var(--g400) !important; }
+.text-emerald-800 { color: var(--g800) !important; }
+
+/* Borders */
+.border-emerald-200 { border-color: var(--g200) !important; }
+
+/* Focus states (escaped class names) */
+.focus\:ring-emerald-300:focus {
+    /* Simulate Tailwind ring-4 with green tint */
+    box-shadow: 0 0 0 4px rgba(51, 115, 87, 0.35) !important;
+}
+.focus\:border-emerald-500:focus {
+    border-color: var(--g500) !important;
 }
 
 /* Responsive Timer Text - Adjusted for better scale on all devices */
