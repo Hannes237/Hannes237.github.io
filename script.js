@@ -194,26 +194,27 @@ function getExpandedExercises(rawExercises, interSetRestDuration) {
         for (let s = 1; s <= sets; s++) {
             const setSuffix = sets > 1 ? ` (Set ${s}/${sets})` : '';
             const baseName = ex.name;
+            const breakNote = (sets > 1 && s < sets && interSetRestDuration > 0) ? ` (break: ${interSetRestDuration}s)` : '';
 
             if (ex.isTwoSided) {
                 const sideDuration = Math.round(ex.duration / 2);
 
-                // Left Side
+                // Left Side (no break note here; break comes after Right side)
                 expanded.push({
                     name: `${baseName}${setSuffix} - Left`,
                     duration: sideDuration,
                     color: ex.color,
                 });
-                // Right Side
+                // Right Side (append break note if another set follows)
                 expanded.push({
-                    name: `${baseName}${setSuffix} - Right`,
+                    name: `${baseName}${setSuffix} - Right${breakNote}`,
                     duration: sideDuration,
                     color: ex.color,
                 });
             } else {
                 // Single-sided/standard exercise with multiple sets
                 expanded.push({
-                    name: `${baseName}${setSuffix}`,
+                    name: `${baseName}${setSuffix}${breakNote}`,
                     duration: ex.duration,
                     color: ex.color,
                 });
@@ -486,10 +487,10 @@ function loadRoutine(key, isReset = false) {
     currentRoutineKey = key;
     const rawExercises = workoutRoutines[currentRoutineKey].exercises;
 
-    // NEW: Get custom break duration, defaulting to 5 if input is invalid
+    // NEW: Get custom break duration, defaulting to 3 if input is invalid
     const rawDuration = parseInt(interSetBreakInput.value);
-    // Ensure duration is a positive number, min 1 second, default 5
-    const breakDuration = Math.max(1, rawDuration || 5);
+    // Ensure duration is a positive number, min 1 second, default 3
+    const breakDuration = Math.max(1, rawDuration || 3);
     
     // 1. Get the expanded list of steps, handling two-sided and multi-set exercises
     exercises = getExpandedExercises(rawExercises, breakDuration); // Pass duration
