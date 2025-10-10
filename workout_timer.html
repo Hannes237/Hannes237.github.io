@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interval Workout Timer</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use Inter font family for a modern, Helvetica-like appearance -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', Helvetica, Arial, sans-serif;
+            transition: background-color 0.5s ease;
+            min-height: 100vh;
+        }
+
+        /* Custom Tailwind Configuration - SWAPPED COLORS */
+        /* Primary (Header, Button) is now Emerald */
+        .color-primary { color: #10b981; } /* Emerald 500 (New Primary) */
+        .bg-primary { background-color: #10b981; }
+        /* Active (Highlight, Complete) is now Indigo */
+        .bg-active { background-color: #4338ca; } /* Indigo 700 (New Active) */
+        .text-active { color: #4338ca; }
+        .bg-neutral { background-color: #fcd34d; } /* Amber 300 - remains the same */
+
+        /* Keyframe for the blinking effect */
+        @keyframes blink-fade {
+            0%, 100% { background-color: #f9fafb; /* Light Gray/Off-White */ }
+            50% { background-color: #4338ca; } /* New Active color (Indigo) */
+        }
+
+        .page-blink {
+            animation: blink-fade 0.5s infinite alternate;
+        }
+
+        /* Responsive Timer Text - Adjusted for better scale on all devices */
+        #timer-display {
+            font-size: 9rem; /* Large size for MacBook Pro */
+            line-height: 1;
+        }
+        @media (max-width: 768px) {
+            #timer-display {
+                font-size: 6rem; /* Medium size for tablets */
+            }
+        }
+        @media (max-width: 480px) {
+            #timer-display {
+                font-size: 5rem; /* Smallest size for iPhone 15 */
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center p-4">
+
+    <!-- Main Container: Centered, max-width for desktop, full-width on mobile -->
+    <div id="app-container" class="w-full max-w-lg lg:max-w-xl xl:max-w-2xl bg-white shadow-2xl xl:shadow-3xl rounded-3xl p-6 md:p-10 transform transition-all duration-500">
+        <h1 class="text-4xl font-extrabold text-center color-primary mb-6">Interval Workout Timer</h1>
+
+        <!-- Routine Selector -->
+        <div class="mb-6">
+            <label for="routine-selector" class="block text-sm font-semibold text-gray-700 mb-2">Select Routine:</label>
+            <select id="routine-selector" class="w-full p-3 border border-gray-300 rounded-xl shadow-sm focus:ring-4 focus:ring-emerald-300 focus:border-emerald-500 transition duration-200 text-lg">
+                <option value="hiit">HIIT Blast (Multi-Set Demo)</option>
+                <option value="mobility">Joint Mobility Flow (Two-Sided Demo)</option>
+                <option value="endurance">Endurance Test</option>
+            </select>
+        </div>
+
+        <!-- NEW: Inter-Set Break Duration Input -->
+        <div class="mb-6">
+            <label for="inter-set-break-input" class="block text-sm font-semibold text-gray-700 mb-2">Break Between Sets (Seconds):</label>
+            <input type="number" id="inter-set-break-input" value="5" min="1" max="60" class="w-full p-3 border border-gray-300 rounded-xl shadow-sm focus:ring-4 focus:ring-emerald-300 focus:border-emerald-500 transition duration-200 text-lg text-center font-mono">
+        </div>
+
+        <!-- Current Exercise Display -->
+        <div class="p-6 mb-8 rounded-xl shadow-lg bg-emerald-50 border-b-4 border-primary">
+            <p id="current-exercise" class="text-3xl md:text-4xl font-extrabold text-center text-gray-800 transition duration-300 min-h-10 flex items-center justify-center">GET READY</p>
+            <p class="text-center text-sm text-emerald-400 mt-2 font-medium">Current Task</p>
+        </div>
+
+        <!-- Timer Display -->
+        <div class="flex flex-col items-center justify-center mb-8">
+            <div id="timer-display" class="font-mono font-black text-gray-900 leading-none tracking-tight transition-colors duration-500">00:00</div>
+            <div id="total-time-display" class="text-lg font-semibold text-gray-600 mt-2">Total Time: 00:00</div>
+        </div>
+
+
+        <!-- Controls -->
+        <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4 mb-10">
+            <button id="start-button" class="bg-primary text-white py-3 px-8 rounded-full font-bold shadow-lg hover:shadow-xl transition duration-300 transform hover:scale-[1.03] active:scale-[0.98] disabled:opacity-50 text-lg">
+                Start Workout
+            </button>
+            <button id="reset-button" class="bg-gray-300 text-gray-800 py-3 px-8 rounded-full font-bold shadow-md hover:shadow-lg transition duration-300 transform hover:scale-[1.03] active:scale-[0.98] disabled:opacity-50 text-lg" disabled>
+                Reset
+            </button>
+        </div>
+
+        <!-- Exercise List -->
+        <h2 class="text-xl font-semibold color-primary mb-4 border-b border-emerald-200 pb-2" id="routine-title">Workout Plan</h2>
+        <ul id="exercise-list" class="space-y-3">
+            <!-- List items will be populated here by JavaScript -->
+        </ul>
+    </div>
+
+    <script type="text/javascript">
+        // --- Workout Data ---
+        const workoutRoutines = {
+            "hiit": {
+                name: "HIIT Blast (Multi-Set Demo)",
+                exercises: [
+                    { name: "Jumping Jacks", duration: 30, color: "bg-neutral" },
+                    { name: "Rest", duration: 10, color: "bg-gray-300" },
+                    { name: "Squats", duration: 45, color: "bg-neutral", sets: 3 }, // 3 sets of 45s, with 5s rest in between
+                    { name: "Rest", duration: 10, color: "bg-gray-300" },
+                    { name: "Push-ups", duration: 30, color: "bg-neutral", sets: 2 }, // 2 sets of 30s, with 5s rest in between
+                    { name: "Rest", duration: 10, color: "bg-gray-300" },
+                    { name: "Plank", duration: 60, color: "bg-neutral" },
+                    { name: "Cool Down", duration: 30, color: "bg-active" },
+                ]
+            },
+            "mobility": {
+                name: "Joint Mobility Flow (Two-Sided Demo)",
+                exercises: [
+                    { name: "Neck Circles", duration: 30, color: "bg-neutral" },
+                    { name: "Shoulder Rolls", duration: 45, color: "bg-neutral" },
+                    { name: "Hip Flexor Stretch", duration: 40, color: "bg-neutral", isTwoSided: true }, // 20s Left, 20s Right
+                    { name: "Cat-Cow Stretch", duration: 60, color: "bg-neutral" },
+                    { name: "Single Leg Calf Raise", duration: 60, color: "bg-neutral", isTwoSided: true }, // 30s Left, 30s Right
+                ]
+            },
+            "endurance": {
+                name: "Endurance Test",
+                exercises: [
+                    { name: "High Knees", duration: 120, color: "bg-neutral" },
+                    { name: "Rest", duration: 30, color: "bg-gray-300" },
+                    { name: "Mountain Climbers", duration: 90, color: "bg-neutral" },
+                    { name: "Rest", duration: 30, color: "bg-gray-300" },
+                    { name: "Single Arm Rows", duration: 120, color: "bg-neutral", isTwoSided: true }, // 60s Left, 60s Right
+                    { name: "Jog in Place", duration: 180, color: "bg-neutral" },
+                ]
+            }
+        };
+
+        // --- Global State Variables ---
+        let currentRoutineKey = "hiit"; // Default routine
+        let exercises = []; // Will hold the expanded list of steps
+        let currentExerciseIndex = 0;
+        let timeRemaining = 0;
+        let timerInterval = null;
+        let isRunning = false;
+        let totalWorkoutDuration = 0;
+
+        // --- DOM elements ---
+        const routineSelector = document.getElementById('routine-selector');
+        const routineTitleEl = document.getElementById('routine-title');
+        const currentExerciseEl = document.getElementById('current-exercise');
+        const timerDisplayEl = document.getElementById('timer-display');
+        const totalTimeDisplayEl = document.getElementById('total-time-display');
+        const startButton = document.getElementById('start-button');
+        const resetButton = document.getElementById('reset-button');
+        const exerciseListEl = document.getElementById('exercise-list');
+        const bodyEl = document.body;
+        const interSetBreakInput = document.getElementById('inter-set-break-input'); // NEW DOM element
+
+        // --- Utility Functions ---
+
+        /**
+         * Formats seconds into MM:SS string.
+         */
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+        }
+
+        /**
+         * Generates a short, simple acoustic blink (tone burst) using Web Audio API.
+         */
+        function playBlinkSound() {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                const audioCtx = new AudioContext();
+                const duration = 0.5; // seconds
+                const gainValue = 0.1;
+
+                const oscillator = audioCtx.createOscillator();
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
+
+                const gainNode = audioCtx.createGain();
+                gainNode.gain.setValueAtTime(gainValue, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+
+                oscillator.connect(gainNode).connect(audioCtx.destination);
+                oscillator.start(audioCtx.currentTime);
+                oscillator.stop(audioCtx.currentTime + duration);
+
+            } catch (error) {
+                console.error("Web Audio API not supported or failed to play sound:", error);
+            }
+        }
+
+        /**
+         * Expands exercises marked as two-sided and multi-set into individual steps.
+         * Inserts a rest steps of duration `interSetRestDuration` between sets.
+         * @param {Array} rawExercises - The list of exercises from the routine data.
+         * @param {number} interSetRestDuration - The custom duration for rest between sets.
+         * @returns {Array} The flattened list of all individual workout steps.
+         */
+        function getExpandedExercises(rawExercises, interSetRestDuration) {
+            const expanded = [];
+
+            for (const ex of rawExercises) {
+                const isRestStep = ex.name.toLowerCase().includes("rest") || ex.name.toLowerCase().includes("cool down");
+                const sets = ex.sets || 1;
+
+                if (isRestStep || (sets === 1 && !ex.isTwoSided)) {
+                    // Simple single step (Rest, Cool Down, or 1-set, 1-sided exercise)
+                    expanded.push(ex);
+                    continue;
+                }
+
+                // Handle multi-set or two-sided exercises
+                for (let s = 1; s <= sets; s++) {
+                    const setSuffix = sets > 1 ? ` (Set ${s}/${sets})` : '';
+                    const baseName = ex.name;
+
+                    if (ex.isTwoSided) {
+                        const sideDuration = Math.round(ex.duration / 2);
+
+                        // Left Side
+                        expanded.push({
+                            name: `${baseName}${setSuffix} - Left`,
+                            duration: sideDuration,
+                            color: ex.color,
+                        });
+                        // Right Side
+                        expanded.push({
+                            name: `${baseName}${setSuffix} - Right`,
+                            duration: sideDuration,
+                            color: ex.color,
+                        });
+                    } else {
+                        // Single-sided/standard exercise with multiple sets
+                        expanded.push({
+                            name: `${baseName}${setSuffix}`,
+                            duration: ex.duration,
+                            color: ex.color,
+                        });
+                    }
+
+                    // Insert rest *only if* there are more sets coming up
+                    if (sets > 1 && s < sets) {
+                        expanded.push({
+                            name: `Rest between sets`,
+                            duration: interSetRestDuration, // Using the dynamic value
+                            color: "bg-gray-300",
+                            isInterSetRest: true // Flag for special styling
+                        });
+                    }
+                }
+            }
+            return expanded;
+        }
+
+
+        /**
+         * Initializes the UI list and state based on the current exercises array.
+         */
+        function initializeWorkout() {
+            // 1. Calculate Total Time based on the expanded list
+            totalWorkoutDuration = exercises.reduce((sum, ex) => sum + ex.duration, 0);
+            totalTimeDisplayEl.textContent = `Total Time: ${formatTime(totalWorkoutDuration)}`;
+
+            // 2. Update Routine Title
+            routineTitleEl.textContent = `Workout Plan (${workoutRoutines[currentRoutineKey].name})`;
+
+            // 3. Render Exercise List (using the expanded list for accurate display)
+            exerciseListEl.innerHTML = exercises.map((ex, index) => {
+                // Determine styling based on step type
+                const isInterSetRest = ex.isInterSetRest;
+                const isSideSplit = ex.name.includes(' - Left') || ex.name.includes(' - Right');
+
+                let nameClasses = 'font-medium text-gray-700';
+                let listItemClasses = 'bg-gray-100 shadow-sm hover:shadow-md hover:bg-emerald-50 transform hover:scale-[1.01]';
+
+                if (isInterSetRest) {
+                    nameClasses = 'text-gray-600 text-sm italic';
+                    listItemClasses = 'bg-gray-200 text-gray-600 shadow-sm';
+                } else if (isSideSplit) {
+                    nameClasses = 'text-gray-700 text-base';
+                }
+
+                return `
+                    <li id="item-${index}" class="flex justify-between items-center p-4 rounded-xl transition-all duration-300 ${listItemClasses}">
+                        <span class="${nameClasses} transition-colors duration-300">${ex.name}</span>
+                        <span class="font-mono text-sm text-gray-500 transition-colors duration-300">${formatTime(ex.duration)}</span>
+                    </li>
+                `;
+            }).join('');
+
+            // 4. Set initial state
+            currentExerciseIndex = 0;
+            // Handle case where exercises list might be empty
+            timeRemaining = exercises.length > 0 ? exercises[0].duration : 0;
+            updateUI();
+        }
+
+        // --- Timer Logic ---
+
+        /**
+         * Advances to the next exercise or finishes the workout.
+         */
+        function nextExercise() {
+            // Remove highlighting from the current item
+            const prevItem = document.getElementById(`item-${currentExerciseIndex}`);
+            if (prevItem) {
+                // Reset classes for completed item
+                prevItem.classList.remove('bg-active', 'text-white', 'scale-105', 'shadow-md', 'shadow-xl');
+                prevItem.classList.add('opacity-50', 'bg-gray-100');
+                // Ensure text color is reset
+                prevItem.querySelectorAll('span').forEach(span => span.style.color = '');
+            }
+
+            currentExerciseIndex++;
+
+            if (currentExerciseIndex < exercises.length) {
+                // Move to the next exercise
+                timeRemaining = exercises[currentExerciseIndex].duration;
+                updateUI();
+            } else {
+                // Workout finished
+                clearInterval(timerInterval);
+                timerInterval = null;
+                isRunning = false;
+                finishWorkout();
+            }
+        }
+
+        /**
+         * Main timer loop, called every second.
+         */
+        function timerTick() {
+            if (!isRunning) return;
+
+            timeRemaining--;
+
+            if (timeRemaining <= 0) {
+                playBlinkSound();
+                nextExercise();
+            } else {
+                updateUI();
+            }
+        }
+
+        /**
+         * Updates all dynamic UI elements (timer, current exercise name, list highlighting).
+         */
+        function updateUI() {
+            const currentEx = exercises[currentExerciseIndex];
+
+            // 1. Update Current Exercise and Timer
+            timerDisplayEl.textContent = formatTime(timeRemaining);
+            currentExerciseEl.textContent = currentEx.name.toUpperCase();
+
+            // Change timer text color when running low
+            const isRestOrCoolDown = currentEx.name.toLowerCase().includes("rest") || currentEx.name.toLowerCase().includes("cool down");
+
+            if (timeRemaining <= 10 && !isRestOrCoolDown && isRunning) {
+                timerDisplayEl.classList.add('text-red-500');
+            } else if (isRestOrCoolDown) {
+                 // Set rest periods to look neutral/calm
+                timerDisplayEl.classList.remove('text-red-500');
+                timerDisplayEl.classList.add('text-gray-500');
+            } else {
+                // Default color during exercise
+                timerDisplayEl.classList.remove('text-red-500', 'text-gray-500');
+            }
+
+            // 2. Update List Highlighting
+            const item = document.getElementById(`item-${currentExerciseIndex}`);
+            if (item) {
+                exerciseListEl.querySelectorAll('li').forEach((li, index) => {
+                    // Mark completed exercises
+                    if (index < currentExerciseIndex) {
+                        li.classList.add('opacity-50');
+                        li.classList.remove('bg-active', 'text-white', 'scale-105', 'shadow-md', 'shadow-xl', 'bg-gray-100', 'bg-gray-200');
+                        // Ensure span colors are reset to default
+                        li.querySelectorAll('span').forEach(span => span.style.color = '');
+                    } else if (index === currentExerciseIndex) {
+                        // Highlight current exercise
+                        li.classList.remove('opacity-50', 'bg-gray-100', 'bg-gray-200');
+                        li.classList.add('bg-active', 'text-white', 'scale-[1.02]', 'shadow-xl');
+                        // Ensure spans inside highlighted item are white
+                        li.querySelectorAll('span').forEach(span => span.style.color = 'white');
+                    } else {
+                        // Upcoming exercises
+                        li.classList.remove('opacity-50', 'bg-active', 'text-white', 'scale-[1.02]', 'shadow-xl');
+                        // Reset to default look for upcoming items (handles inter-set rest background)
+                        li.classList.add(exercises[index].isInterSetRest ? 'bg-gray-200' : 'bg-gray-100');
+                        // Reset span colors for upcoming items
+                        li.querySelectorAll('span').forEach(span => span.style.color = '');
+                    }
+                });
+            }
+
+            // 3. Update Button State
+            const isInitialState = currentExerciseIndex === 0 && timeRemaining === exercises[0].duration;
+
+            if (isRunning) {
+                startButton.textContent = "Pause";
+                startButton.classList.remove('bg-primary');
+                startButton.classList.add('bg-gray-500');
+                resetButton.disabled = false;
+                routineSelector.disabled = true;
+                interSetBreakInput.disabled = true; // Disable input while running
+            } else {
+                startButton.textContent = "Resume";
+                if (isInitialState) {
+                    startButton.textContent = "Start Workout";
+                }
+                startButton.classList.add('bg-primary');
+                startButton.classList.remove('bg-gray-500');
+                resetButton.disabled = isInitialState;
+                routineSelector.disabled = false;
+                interSetBreakInput.disabled = false; // Enable input when paused or reset
+            }
+        }
+
+        /**
+         * Starts or pauses the workout.
+         */
+        function toggleTimer() {
+            if (isRunning) {
+                // Pause
+                clearInterval(timerInterval);
+                timerInterval = null;
+                isRunning = false;
+            } else {
+                // Start
+                isRunning = true;
+                timerInterval = setInterval(timerTick, 1000);
+            }
+            updateUI();
+        }
+
+        /**
+         * Resets the entire workout to the starting state.
+         */
+        function resetWorkout() {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            isRunning = false;
+
+            // Remove blink effect
+            bodyEl.classList.remove('page-blink');
+            bodyEl.style.backgroundColor = '';
+
+            // Re-initialize state based on current routine key
+            loadRoutine(currentRoutineKey, true);
+
+            // Clear finish message
+            currentExerciseEl.textContent = "GET READY";
+            currentExerciseEl.classList.remove('text-active');
+            timerDisplayEl.classList.remove('text-active');
+            timerDisplayEl.classList.remove('text-red-500', 'text-gray-500');
+
+
+            // Update button states
+            startButton.textContent = "Start Workout";
+            startButton.disabled = false;
+            resetButton.disabled = true;
+            routineSelector.disabled = false;
+            interSetBreakInput.disabled = false; // Ensure input is enabled on reset
+
+            console.log("Workout Reset.");
+        }
+
+        /**
+         * Handles the visual and audio feedback when the full workout is complete.
+         */
+        function finishWorkout() {
+            currentExerciseEl.textContent = "WORKOUT COMPLETE!";
+            currentExerciseEl.classList.add('text-active');
+            timerDisplayEl.textContent = "00:00";
+            timerDisplayEl.classList.remove('text-red-500', 'text-gray-500');
+            timerDisplayEl.classList.add('text-active');
+
+            // Blinking effect on the page body
+            bodyEl.classList.add('page-blink');
+            playBlinkSound(); // Play sound immediately
+
+            startButton.disabled = true;
+            resetButton.disabled = false;
+            routineSelector.disabled = false; // Re-enable selector after finishing
+            interSetBreakInput.disabled = false; // Re-enable input after finishing
+            console.log("Workout Finished!");
+        }
+
+        /**
+         * Loads a new workout routine based on the key selected in the dropdown.
+         * @param {string} key - The key of the routine to load (e.g., 'hiit', 'mobility').
+         * @param {boolean} isReset - If true, only reset without reloading the whole routine object.
+         */
+        function loadRoutine(key, isReset = false) {
+            if (isRunning && !isReset) return; // Prevent changing routine while timer is running
+
+            currentRoutineKey = key;
+            const rawExercises = workoutRoutines[currentRoutineKey].exercises;
+
+            // NEW: Get custom break duration, defaulting to 5 if input is invalid
+            const rawDuration = parseInt(interSetBreakInput.value);
+            // Ensure duration is a positive number, min 1 second, default 5
+            const breakDuration = Math.max(1, rawDuration || 5);
+            
+            // 1. Get the expanded list of steps, handling two-sided and multi-set exercises
+            exercises = getExpandedExercises(rawExercises, breakDuration); // Pass duration
+
+            // 2. Initialize the UI and state
+            initializeWorkout();
+
+            // Ensure timer is stopped and buttons are in initial state if not a reset
+            if (!isReset) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                isRunning = false;
+            }
+        }
+
+        // --- Event Listeners and Initialization ---
+
+        startButton.addEventListener('click', toggleTimer);
+        resetButton.addEventListener('click', resetWorkout);
+
+        // Listener for routine selection change
+        routineSelector.addEventListener('change', (event) => {
+            // Remove blink effect on selection change
+            bodyEl.classList.remove('page-blink');
+            loadRoutine(event.target.value);
+        });
+
+        // NEW: Listener for inter-set break change
+        interSetBreakInput.addEventListener('change', () => {
+            // Re-load the routine to update the exercise list, total time, and state with the new break duration
+            loadRoutine(currentRoutineKey, true);
+        });
+        
+        // Initialize the app when the window loads
+        window.onload = () => {
+             // Set the initial routine based on the selector's default value
+            loadRoutine(routineSelector.value);
+        };
+    </script>
+
+</body>
+</html>
+
