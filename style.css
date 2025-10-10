@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+body {
+    font-family: 'Inter', Helvetica, Arial, sans-serif;
+    transition: background-color 0.5s ease;
+    min-height: 100vh;
+}
+
+/* Custom Tailwind Configuration - SWAPPED COLORS */
+/* Primary (Header, Button) is now Emerald */
+.color-primary { color: #10b981; } /* Emerald 500 (New Primary) */
+.bg-primary { background-color: #10b981; }
+/* Active (Highlight, Complete) is now Indigo */
+.bg-active { background-color: #4338ca; } /* Indigo 700 (New Active) */
+.text-active { color: #4338ca; }
+.bg-neutral { background-color: #fcd34d; } /* Amber 300 - remains the same */
+
+/* Keyframe for the blinking effect */
+@keyframes blink-fade {
+    0%, 100% { background-color: #f9fafb; /* Light Gray/Off-White */ }
+    50% { background-color: #4338ca; } /* New Active color (Indigo) */
+}
+
+.page-blink {
+    animation: blink-fade 0.5s infinite alternate;
+}
+
+/* Responsive Timer Text - Adjusted for better scale on all devices */
+#timer-display {
+    font-size: 9rem; /* Large size for MacBook Pro */
+    line-height: 1;
+}
+@media (max-width: 768px) {
+    #timer-display {
+        font-size: 6rem; /* Medium size for tablets */
+    }
+}
+@media (max-width: 480px) {
+    #timer-display {
+        font-size: 5rem; /* Smallest size for iPhone 15 */
+    }
+}
