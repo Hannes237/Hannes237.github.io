@@ -1,43 +1,21 @@
 // --- Workout Data ---
 const workoutRoutines = {
-    "hiit": {
-        name: "HIIT Blast (Multi-Set Demo)",
+    "morning": {
+        name: "Morning Mobility Mantra",
         exercises: [
-            { name: "Jumping Jacks", duration: 30, color: "bg-neutral" },
-            { name: "Rest", duration: 10, color: "bg-gray-300" },
-            { name: "Squats", duration: 45, color: "bg-neutral", sets: 3 }, // 3 sets of 45s, with 5s rest in between
-            { name: "Rest", duration: 10, color: "bg-gray-300" },
-            { name: "Push-ups", duration: 30, color: "bg-neutral", sets: 2 }, // 2 sets of 30s, with 5s rest in between
-            { name: "Rest", duration: 10, color: "bg-gray-300" },
-            { name: "Plank", duration: 60, color: "bg-neutral" },
-            { name: "Cool Down", duration: 30, color: "bg-active" },
-        ]
-    },
-    "mobility": {
-        name: "Joint Mobility Flow (Two-Sided Demo)",
-        exercises: [
-            { name: "Neck Circles", duration: 30, color: "bg-neutral" },
-            { name: "Shoulder Rolls", duration: 45, color: "bg-neutral" },
-            { name: "Hip Flexor Stretch", duration: 40, color: "bg-neutral", isTwoSided: true }, // 20s Left, 20s Right
-            { name: "Cat-Cow Stretch", duration: 60, color: "bg-neutral" },
-            { name: "Single Leg Calf Raise", duration: 60, color: "bg-neutral", isTwoSided: true }, // 30s Left, 30s Right
-        ]
-    },
-    "endurance": {
-        name: "Endurance Test",
-        exercises: [
-            { name: "High Knees", duration: 120, color: "bg-neutral" },
-            { name: "Rest", duration: 30, color: "bg-gray-300" },
-            { name: "Mountain Climbers", duration: 90, color: "bg-neutral" },
-            { name: "Rest", duration: 30, color: "bg-gray-300" },
-            { name: "Single Arm Rows", duration: 120, color: "bg-neutral", isTwoSided: true }, // 60s Left, 60s Right
-            { name: "Jog in Place", duration: 180, color: "bg-neutral" },
+            { name: "Molassa Squat", duration: 30, color: "bg-neutral" },
+            { name: "Standing Forward Fold", duration: 30, color: "bg-neutral" },
+            { name: "Deep Calf Stretch", duration: 30, color: "bg-neutral" },
+            { name: "Downward Dog", duration: 30, color: "bg-neutral" },
+            { name: "Low Lunge to Half Split", duration: 30, color: "bg-neutral", isTwoSided: true },
+            { name: "Swan Rises", duration: 30, color: "bg-neutral", reps: 10 },
+            { name: "Relaxed Child's Pose", duration: 30, color: "bg-neutral" },
         ]
     }
 };
 
 // --- Global State Variables ---
-let currentRoutineKey = "hiit"; // Default routine
+let currentRoutineKey = "morning"; // Default routine
 let exercises = []; // Will hold the expanded list of steps
 let currentExerciseIndex = 0;
 let timeRemaining = 0;
@@ -69,30 +47,97 @@ function formatTime(seconds) {
 }
 
 /**
- * Generates a short, simple acoustic blink (tone burst) using Web Audio API.
+ * Plays a short harmonic chime using additive synthesis (fundamental + supporting partials).
+ * Creates a natural harmonic with an overlay of supporting frequencies.
  */
-function playBlinkSound() {
+function playHarmonicChime(options = {}) {
     try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
-        const audioCtx = new AudioContext();
-        const duration = 0.5; // seconds
-        const gainValue = 0.1;
+        const ctx = new AudioContext();
 
-        const oscillator = audioCtx.createOscillator();
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
+        const fundamental = Number(options.fundamental) || 440;
+        const duration = Math.max(0.06, Number(options.duration) || 0.35);
+        const attack = Math.max(0.003, Number(options.attack) || 0.008);
+        const gain = Math.min(0.4, Math.max(0.02, Number(options.gain) || 0.12));
+        const now = ctx.currentTime;
 
-        const gainNode = audioCtx.createGain();
-        gainNode.gain.setValueAtTime(gainValue, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        // Master envelope
+        const master = ctx.createGain();
+        master.gain.setValueAtTime(0.0001, now);
+        master.gain.exponentialRampToValueAtTime(gain, now + attack);
+        master.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
-        oscillator.connect(gainNode).connect(audioCtx.destination);
-        oscillator.start(audioCtx.currentTime);
-        oscillator.stop(audioCtx.currentTime + duration);
+        // Gentle low-pass to keep it pleasant
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(Math.min(8000, fundamental * 8), now);
+        master.connect(lp).connect(ctx.destination);
 
+        // Default partials: fundamental + harmonic series with a perfect fifth support
+        const partials = (options.partials && options.partials.length ? options.partials : [
+            { ratio: 1.0, gain: 1.00, type: 'sine', detune: 0 },
+            { ratio: 2.0, gain: 0.35, type: 'sine', detune: -4 },
+            { ratio: 3.0, gain: 0.22, type: 'sine', detune: 3 },
+            { ratio: 1.5, gain: 0.18, type: 'sine', detune: 0 }, // perfect fifth support
+            { ratio: 4.0, gain: 0.12, type: 'sine', detune: 0 },
+        ]);
+
+        // Build oscillators
+        partials.forEach(p => {
+            const osc = ctx.createOscillator();
+            osc.type = p.type || 'sine';
+            osc.frequency.setValueAtTime(fundamental * p.ratio, now);
+            if (osc.detune && typeof p.detune === 'number') {
+                osc.detune.setValueAtTime(p.detune, now);
+            }
+            const g = ctx.createGain();
+            const partGain = Math.max(0.0001, gain * (p.gain || 0.1));
+            // Let partials rise slightly after the master attack for bloom
+            g.gain.setValueAtTime(0.0001, now);
+            g.gain.exponentialRampToValueAtTime(partGain, now + Math.min(attack * 1.2, 0.03));
+            g.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+            osc.connect(g).connect(master);
+            osc.start(now);
+            osc.stop(now + duration + 0.02);
+        });
+
+        // Cleanup
+        setTimeout(() => { try { ctx.close(); } catch (e) {} }, (duration + 0.06) * 1000);
     } catch (error) {
-        console.error("Web Audio API not supported or failed to play sound:", error);
+        console.error('Failed to play harmonic chime:', error);
     }
+}
+
+/**
+ * Acoustic blink (transition) using a pleasant harmonic chime.
+ */
+function playBlinkSound() {
+    // A gentle C5-based chime
+    playHarmonicChime({
+        fundamental: 523.25, // C5
+        duration: 0.45,
+        attack: 0.01,
+        gain: 0.12
+    });
+}
+
+/**
+ * Bright countdown beep (last 3 seconds) with harmonic support.
+ */
+function playCountdownBeep() {
+    // Short, bright A5 with supporting partials
+    playHarmonicChime({
+        fundamental: 880, // A5
+        duration: 0.12,
+        attack: 0.005,
+        gain: 0.10,
+        partials: [
+            { ratio: 1.0, gain: 1.00, type: 'sine', detune: 0 },
+            { ratio: 2.0, gain: 0.28, type: 'sine', detune: -3 },
+            { ratio: 3.0, gain: 0.18, type: 'sine', detune: 2 },
+            { ratio: 1.5, gain: 0.14, type: 'sine', detune: 0 }
+        ]
+    });
 }
 
 /**
@@ -189,7 +234,7 @@ function initializeWorkout() {
         return `
             <li id="item-${index}" class="flex justify-between items-center p-4 rounded-xl transition-all duration-300 ${listItemClasses}">
                 <span class="${nameClasses} transition-colors duration-300">${ex.name}</span>
-                <span class="font-mono text-sm text-gray-500 transition-colors duration-300">${formatTime(ex.duration)}</span>
+                <span class="font-mono text-sm text-gray-500 transition-colors duration-300">${ex.reps ? `${ex.reps} reps` : formatTime(ex.duration)}</span>
             </li>
         `;
     }).join('');
@@ -239,6 +284,14 @@ function timerTick() {
     if (!isRunning) return;
 
     timeRemaining--;
+
+    // Play bright beeps at the last 3 seconds for exercise steps (not rests)
+    const currentEx = exercises[currentExerciseIndex];
+    const name = (currentEx?.name || '').toLowerCase();
+    const isRestStep = name.includes('rest') || name.includes('cool down') || currentEx?.isInterSetRest;
+    if (timeRemaining > 0 && timeRemaining <= 3 && !isRestStep) {
+        playCountdownBeep();
+    }
 
     if (timeRemaining <= 0) {
         playBlinkSound();
