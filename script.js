@@ -112,32 +112,62 @@ function playHarmonicChime(options = {}) {
  * Acoustic blink (transition) using a pleasant harmonic chime.
  */
 function playBlinkSound() {
-    // A gentle C5-based chime
-    playHarmonicChime({
-        fundamental: 523.25, // C5
-        duration: 0.45,
-        attack: 0.01,
-        gain: 0.12
-    });
+    // Deep, simple transition tone (original-style)
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioContext();
+        const now = ctx.currentTime;
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(220, now); // Deep A3
+
+        // Envelope: quick attack, short decay
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.12, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.22);
+
+        setTimeout(() => { try { ctx.close(); } catch(e){} }, 260);
+    } catch(e) {
+        console.error('Blink sound failed:', e);
+    }
 }
 
 /**
  * Bright countdown beep (last 3 seconds) with harmonic support.
  */
 function playCountdownBeep() {
-    // Short, bright A5 with supporting partials
-    playHarmonicChime({
-        fundamental: 880, // A5
-        duration: 0.12,
-        attack: 0.005,
-        gain: 0.10,
-        partials: [
-            { ratio: 1.0, gain: 1.00, type: 'sine', detune: 0 },
-            { ratio: 2.0, gain: 0.28, type: 'sine', detune: -3 },
-            { ratio: 3.0, gain: 0.18, type: 'sine', detune: 2 },
-            { ratio: 1.5, gain: 0.14, type: 'sine', detune: 0 }
-        ]
-    });
+    // Higher, bright short beep for last 3 seconds (original-style)
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioContext();
+        const now = ctx.currentTime;
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(880, now); // A5 high note
+
+        // Snappy envelope
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.10, now + 0.005);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.10);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.12);
+
+        setTimeout(() => { try { ctx.close(); } catch(e){} }, 180);
+    } catch(e) {
+        console.error('Countdown beep failed:', e);
+    }
 }
 
 /**
