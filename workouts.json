@@ -1,7 +1,7 @@
 {
   "name": "Morning Mobility Mantra",
   "exercises": [
-    { "exercise_name": "Molassa Squat", "duration": 30 },
+    { "exercise_name": "Molassa Squat", "duration": 30, "sets":  4},
     { "exercise_name": "Standing Forward Fold", "duration": 30 },
     { "exercise_name": "Deep Calf Stretch", "duration": 30 },
     { "exercise_name": "Downward Dog", "duration": 30 },

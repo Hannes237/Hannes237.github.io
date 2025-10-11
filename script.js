@@ -86,17 +86,16 @@ function buildStepsFromSchema(items, interSetRestDuration) {
 
         for (let s = 1; s <= sets; s++) {
             const setSuffix = sets > 1 ? ` (Set ${s}/${sets})` : '';
-            const breakNote = (s < sets && interSetRestDuration > 0 && !ctx.inSuperset) ? ` (break: ${interSetRestDuration}s)` : '';
 
             if (bilateral) {
                 const sideDuration = hasDuration ? Math.max(1, Math.round(baseDuration / 2)) : 0;
                 // Left
                 pushStep(`${title}${setSuffix} - Left`, sideDuration, reps);
-                // Right (append break note when not inside a superset and break follows)
-                pushStep(`${title}${setSuffix} - Right${breakNote}`, sideDuration, reps);
+                // Right
+                pushStep(`${title}${setSuffix} - Right`, sideDuration, reps);
             } else {
                 const d = hasDuration ? baseDuration : 0; // reps-driven steps use 0s to disable timer
-                pushStep(`${title}${setSuffix}${breakNote}`, d, reps);
+                pushStep(`${title}${setSuffix}`, d, reps);
             }
 
             // Add inter-set rest only for standalone exercises
@@ -114,11 +113,8 @@ function buildStepsFromSchema(items, interSetRestDuration) {
                 const roundStart = expanded.length;
                 const children = asArray(item.super_set);
                 children.forEach(child => processExercise(child, { inSuperset: true }));
-                // After finishing a round, append break note to the very last child in this round
+                // After finishing a round, insert an inter-set rest (no annotation in names)
                 if (gs < groupSets && interSetRestDuration > 0 && expanded.length > roundStart) {
-                    const lastIdx = expanded.length - 1;
-                    expanded[lastIdx].name += ` (break: ${interSetRestDuration}s)`;
-                    // Insert the actual inter-set rest after the round
                     pushStep('Rest between sets', interSetRestDuration, undefined, { isInterSetRest: true, color: 'bg-gray-300' });
                 }
             }
@@ -127,7 +123,23 @@ function buildStepsFromSchema(items, interSetRestDuration) {
         }
     }
 
-    asArray(items).forEach(processItem);
+    const topLevelItems = asArray(items);
+    for (let i = 0; i < topLevelItems.length; i++) {
+        const beforeLen = expanded.length;
+        processItem(topLevelItems[i]);
+        const produced = expanded.length - beforeLen;
+        const hasNext = i < topLevelItems.length - 1;
+        // After finishing each top-level item (exercise or superset), add a rest before the next item
+        if (produced > 0 && hasNext && interSetRestDuration > 0) {
+            const lastIdx = expanded.length - 1;
+            // Annotate the last step name to indicate upcoming break
+            if (expanded[lastIdx] && expanded[lastIdx].name && !expanded[lastIdx].isInterSetRest) {
+                expanded[lastIdx].name += ` (break: ${interSetRestDuration}s)`;
+            }
+            // Insert actual rest between exercises
+            pushStep('Rest between exercises', interSetRestDuration, undefined, { isInterSetRest: true, color: 'bg-gray-300' });
+        }
+    }
     return expanded;
 }
 
