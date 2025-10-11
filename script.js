@@ -11,12 +11,23 @@ const workoutRoutines = {
 const WORKOUT_JSON_STORAGE_KEY = 'workoutJSONv1';
 
 /**
- * Load workout JSON from localStorage; if not available, fetch workouts.json from the server,
- * store it locally, and return the parsed object. Expected shape:
- * { name: string, exercises: Array<ExerciseOrSuperset> }
+ * Load workout JSON from the file first; on failure, fallback to localStorage cache.
+ * Expected shape: { name: string, exercises: Array<ExerciseOrSuperset> }
  */
 async function loadWorkoutJSON() {
-    // Try localStorage first
+    // 1) Prefer fresh file from server/disk each time
+    try {
+        const res = await fetch('workouts.json', { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        // Update cache for offline use
+        try { localStorage.setItem(WORKOUT_JSON_STORAGE_KEY, JSON.stringify(data)); } catch (_) {}
+        return data;
+    } catch (e) {
+        console.warn('Fetching workouts.json failed, falling back to cached copy if available.', e);
+    }
+
+    // 2) Fallback: localStorage cache
     try {
         const raw = localStorage.getItem(WORKOUT_JSON_STORAGE_KEY);
         if (raw) {
@@ -25,19 +36,12 @@ async function loadWorkoutJSON() {
                 return parsed;
             }
         }
-    } catch (e) { /* ignore and try fetch */ }
-
-    // Fallback: fetch bundled file
-    try {
-        const res = await fetch('workouts.json', { cache: 'no-store' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        try { localStorage.setItem(WORKOUT_JSON_STORAGE_KEY, JSON.stringify(data)); } catch (_) {}
-        return data;
     } catch (e) {
-        console.warn('Failed to load workouts.json; using built-in routine. Error:', e);
-        return null;
+        // ignore
     }
+
+    // 3) Nothing available
+    return null;
 }
 
 /**
@@ -51,12 +55,15 @@ function buildStepsFromSchema(items, interSetRestDuration) {
 
     // Helper to push a step
     const pushStep = (name, duration, reps, opts = {}) => {
+        const hasReps = Number(reps) > 0;
+        const dur = Number(duration) || 0;
         const step = {
             name,
-            duration: Math.max(1, Number(duration) || 0),
+            // Allow duration 0 for reps-driven manual steps; keep >0 for timed steps
+            duration: hasReps ? 0 : Math.max(1, dur),
             color: opts.color || 'bg-neutral'
         };
-        if (reps && Number(reps) > 0) step.reps = Number(reps);
+        if (hasReps) step.reps = Number(reps);
         if (opts.isInterSetRest) step.isInterSetRest = true;
         expanded.push(step);
     };
@@ -88,7 +95,7 @@ function buildStepsFromSchema(items, interSetRestDuration) {
                 // Right (append break note when not inside a superset and break follows)
                 pushStep(`${title}${setSuffix} - Right${breakNote}`, sideDuration, reps);
             } else {
-                const d = hasDuration ? baseDuration : 1; // ensure at least 1s to keep timer functional
+                const d = hasDuration ? baseDuration : 0; // reps-driven steps use 0s to disable timer
                 pushStep(`${title}${setSuffix}${breakNote}`, d, reps);
             }
 
@@ -141,6 +148,7 @@ const timerDisplayEl = document.getElementById('timer-display');
 const totalTimeDisplayEl = document.getElementById('total-time-display');
 const startButton = document.getElementById('start-button');
 const resetButton = document.getElementById('reset-button');
+const nextRepsButton = document.getElementById('next-reps-button');
 const exerciseListEl = document.getElementById('exercise-list');
 const bodyEl = document.body;
 const interSetBreakInput = document.getElementById('inter-set-break-input'); // NEW DOM element
@@ -628,6 +636,13 @@ function nextExercise() {
     if (currentExerciseIndex < exercises.length) {
         // Move to the next exercise
         timeRemaining = exercises[currentExerciseIndex].duration;
+        // If the new step is reps-driven, stop the timer immediately and require manual advance
+        const cur = exercises[currentExerciseIndex];
+        const isRepsStep = cur && Number(cur.reps) > 0 && !cur.isInterSetRest;
+        if (isRepsStep) {
+            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            isRunning = false;
+        }
         updateUI();
     } else {
         // Workout finished
@@ -644,10 +659,21 @@ function nextExercise() {
 function timerTick() {
     if (!isRunning) return;
 
+    const currentEx = exercises[currentExerciseIndex];
+    const hasReps = currentEx && Number(currentEx.reps) > 0 && !currentEx.isInterSetRest;
+
+    // If this step is reps-driven, do not run a timer here.
+    if (hasReps) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+        isRunning = false;
+        updateUI();
+        return;
+    }
+
     timeRemaining--;
 
     // Play bright beeps at the last 3 seconds for exercise steps (not rests)
-    const currentEx = exercises[currentExerciseIndex];
     const name = (currentEx?.name || '').toLowerCase();
     const isRestStep = name.includes('rest') || name.includes('cool down') || currentEx?.isInterSetRest;
     if (timeRemaining > 0 && timeRemaining <= 3 && !isRestStep) {
@@ -677,21 +703,27 @@ function updateUI() {
         startButton.textContent = "Start Workout";
         startButton.disabled = true;
         resetButton.disabled = true;
+        if (nextRepsButton) nextRepsButton.classList.add('hidden');
         routineSelector.disabled = false;
         interSetBreakInput.disabled = false;
         return;
     }
 
     const currentEx = exercises[currentExerciseIndex];
+    const isRepsStep = currentEx && Number(currentEx.reps) > 0 && !currentEx.isInterSetRest;
 
     // 1. Update Current Exercise and Timer
-    timerDisplayEl.textContent = formatTime(timeRemaining);
+    if (isRepsStep) {
+        timerDisplayEl.textContent = "--:--";
+    } else {
+        timerDisplayEl.textContent = formatTime(timeRemaining);
+    }
     currentExerciseEl.textContent = currentEx.name.toUpperCase();
 
     // Change timer text color when running low
     const isRestOrCoolDown = currentEx.name.toLowerCase().includes("rest") || currentEx.name.toLowerCase().includes("cool down");
 
-    if (timeRemaining <= 10 && !isRestOrCoolDown && isRunning) {
+    if (!isRepsStep && timeRemaining <= 10 && !isRestOrCoolDown && isRunning) {
         timerDisplayEl.classList.add('text-red-500');
     } else if (isRestOrCoolDown) {
          // Set rest periods to look neutral/calm
@@ -732,7 +764,18 @@ function updateUI() {
     // 3. Update Button State
     const isInitialState = exercises.length > 0 && currentExerciseIndex === 0 && timeRemaining === exercises[0].duration;
 
-    if (isRunning) {
+    if (isRepsStep) {
+        // Show Next button, disable Start, pause timer
+        if (nextRepsButton) nextRepsButton.classList.remove('hidden');
+        startButton.disabled = true;
+        startButton.textContent = isInitialState ? "Start Workout" : "Resume";
+        startButton.classList.add('bg-primary');
+        startButton.classList.remove('bg-gray-500');
+        resetButton.disabled = false;
+        routineSelector.disabled = false;
+        interSetBreakInput.disabled = false;
+    } else if (isRunning) {
+        if (nextRepsButton) nextRepsButton.classList.add('hidden');
         startButton.textContent = "Pause";
         startButton.classList.remove('bg-primary');
         startButton.classList.add('bg-gray-500');
@@ -740,10 +783,12 @@ function updateUI() {
         routineSelector.disabled = true;
         interSetBreakInput.disabled = true; // Disable input while running
     } else {
+        if (nextRepsButton) nextRepsButton.classList.add('hidden');
         startButton.textContent = "Resume";
         if (isInitialState) {
             startButton.textContent = "Start Workout";
         }
+        startButton.disabled = false;
         startButton.classList.add('bg-primary');
         startButton.classList.remove('bg-gray-500');
         resetButton.disabled = isInitialState;
@@ -765,6 +810,16 @@ function toggleTimer() {
         // Start
         // Ensure iOS-safe audio is initialized synchronously within this user gesture
         try { if (typeof enableSoundsForIOSQuick === 'function') enableSoundsForIOSQuick(); } catch (_) {}
+        const currentEx = exercises[currentExerciseIndex];
+        const isRepsStep = currentEx && Number(currentEx.reps) > 0 && !currentEx.isInterSetRest;
+        if (isRepsStep) {
+            // Do not start timer on reps-driven steps; user must press Next
+            clearInterval(timerInterval);
+            timerInterval = null;
+            isRunning = false;
+            updateUI();
+            return;
+        }
         isRunning = true;
         timerInterval = setInterval(timerTick, 1000);
     }
@@ -904,8 +959,28 @@ function ensureCustomWorkoutsInRoutinesAndSelector() {
 
 // --- Event Listeners and Initialization ---
 
+function onNextRepsClick() {
+    // User confirms completion of reps, move to next step
+    try { playBlinkSound(); } catch(_) {}
+    nextExercise();
+    const cur = exercises[currentExerciseIndex];
+    // If the next step is timed, resume timer automatically
+    const isTimed = cur && (!cur.reps || cur.isInterSetRest) && Number(cur.duration) > 0;
+    if (isTimed) {
+        if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+        isRunning = true;
+        timerInterval = setInterval(timerTick, 1000);
+    } else {
+        // Ensure not running for another reps step
+        if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+        isRunning = false;
+    }
+    updateUI();
+}
+
 startButton.addEventListener('click', toggleTimer);
 resetButton.addEventListener('click', resetWorkout);
+if (nextRepsButton) nextRepsButton.addEventListener('click', onNextRepsClick);
 
 // Listener for routine selection change
 routineSelector.addEventListener('change', (event) => {
