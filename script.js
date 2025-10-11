@@ -799,3 +799,36 @@ window.onload = () => {
     // Then set the initial routine based on the selector's default value
     loadRoutine(routineSelector.value);
 };
+
+
+// Helper: quickly enable iOS-safe HTMLAudioElement without extra UI (for test page)
+function enableSoundsForIOSQuick() {
+    try {
+        if (soundEnabled && htmlAudio) return true;
+        // Create the shared HTMLAudioElement synchronously within a user gesture
+        htmlAudio = new Audio();
+        htmlAudio.preload = 'auto';
+        htmlAudio.crossOrigin = 'anonymous';
+        soundEnabled = true;
+        // Start pre-rendering tones in the background
+        (async () => {
+            try {
+                if (!SoundURLs.blink || !SoundURLs.beep) {
+                    const [blinkBlob, beepBlob] = await Promise.all([
+                        renderToneBlob({ frequency: 220, duration: 0.22, type: 'sine', gain: 0.12 }),
+                        renderToneBlob({ frequency: 880, duration: 0.12, type: 'square', gain: 0.10 }),
+                    ]);
+                    if (!SoundURLs.blink) SoundURLs.blink = URL.createObjectURL(blinkBlob);
+                    if (!SoundURLs.beep) SoundURLs.beep = URL.createObjectURL(beepBlob);
+                }
+            } catch (e) {
+                // Ignore; Web Audio fallback will still work
+            }
+        })();
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+// Expose to window for tests page
+window.enableSoundsForIOSQuick = enableSoundsForIOSQuick;
