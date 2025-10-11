@@ -636,6 +636,8 @@ function toggleTimer() {
         isRunning = false;
     } else {
         // Start
+        // Ensure iOS-safe audio is initialized synchronously within this user gesture
+        try { if (typeof enableSoundsForIOSQuick === 'function') enableSoundsForIOSQuick(); } catch (_) {}
         isRunning = true;
         timerInterval = setInterval(timerTick, 1000);
     }
