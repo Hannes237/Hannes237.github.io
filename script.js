@@ -1,18 +1,9 @@
 // --- Workout Data ---
-// Will be overridden on load by workouts.json if available
+// Always loaded from workouts.json (or localStorage cache). No hardcoded exercises here.
 const workoutRoutines = {
     "morning": {
-        name: "Morning Mobility Mantra",
-        exercises: [
-            { name: "Molassa Squat", duration: 30, color: "bg-neutral" },
-            { name: "Standing Forward Fold", duration: 30, color: "bg-neutral" },
-            { name: "Deep Calf Stretch", duration: 30, color: "bg-neutral" },
-            { name: "Downward Dog", duration: 30, color: "bg-neutral" },
-            { name: "Low Lunge to Half Split", duration: 30, color: "bg-neutral", isTwoSided: true },
-            { name: "Swan Rises", duration: 30, color: "bg-neutral", reps: 10 },
-            { name: "Relaxed Child's Pose", duration: 30, color: "bg-neutral" },
-        ]
-        // Optionally, when JSON is loaded, a field `schemaExercises` will be added
+        name: "Morning Mobility Mantra"
+        // schemaExercises will be populated from JSON at runtime
     }
 };
 
@@ -75,10 +66,15 @@ function buildStepsFromSchema(items, interSetRestDuration) {
     function processExercise(item, ctx) {
         const title = String(item.exercise_name || item.name || '').trim();
         if (!title) return;
-        const hasDuration = Number.isFinite(Number(item.duration)) && Number(item.duration) > 0;
+        let hasDuration = Number.isFinite(Number(item.duration)) && Number(item.duration) > 0;
         const reps = Number.isFinite(Number(item.reps)) && Number(item.reps) > 0 ? Number(item.reps) : undefined;
         const sets = Math.max(1, Number(item.sets) || 1);
         const bilateral = !!item.bilaterally;
+
+        // Enforce mutual exclusivity: if reps and duration are provided, prefer reps (manual progression)
+        if (reps && hasDuration) {
+            hasDuration = false; // ignore duration when reps exist
+        }
         const baseDuration = hasDuration ? Math.round(Number(item.duration)) : 0;
 
         for (let s = 1; s <= sets; s++) {
@@ -577,7 +573,8 @@ function initializeWorkout() {
     totalTimeDisplayEl.textContent = `Total Time: ${formatTime(totalWorkoutDuration)}`;
 
     // 2. Update Routine Title
-    routineTitleEl.textContent = `Workout Plan (${workoutRoutines[currentRoutineKey].name})`;
+    const routineName = (workoutRoutines[currentRoutineKey] && workoutRoutines[currentRoutineKey].name) ? workoutRoutines[currentRoutineKey].name : 'Workout';
+    routineTitleEl.textContent = `Workout Plan (${routineName})`;
 
     // 3. Render Exercise List (using the expanded list for accurate display)
     exerciseListEl.innerHTML = exercises.map((ex, index) => {
@@ -669,6 +666,22 @@ function timerTick() {
  * Updates all dynamic UI elements (timer, current exercise name, list highlighting).
  */
 function updateUI() {
+    // Handle case with no exercises loaded
+    if (!exercises || exercises.length === 0) {
+        timerDisplayEl.textContent = formatTime(0);
+        currentExerciseEl.textContent = "NO WORKOUT LOADED";
+        timerDisplayEl.classList.remove('text-red-500', 'text-gray-500');
+        // Clear list
+        exerciseListEl.innerHTML = '';
+        // Buttons state
+        startButton.textContent = "Start Workout";
+        startButton.disabled = true;
+        resetButton.disabled = true;
+        routineSelector.disabled = false;
+        interSetBreakInput.disabled = false;
+        return;
+    }
+
     const currentEx = exercises[currentExerciseIndex];
 
     // 1. Update Current Exercise and Timer
@@ -717,7 +730,7 @@ function updateUI() {
     }
 
     // 3. Update Button State
-    const isInitialState = currentExerciseIndex === 0 && timeRemaining === exercises[0].duration;
+    const isInitialState = exercises.length > 0 && currentExerciseIndex === 0 && timeRemaining === exercises[0].duration;
 
     if (isRunning) {
         startButton.textContent = "Pause";
@@ -820,20 +833,19 @@ function loadRoutine(key, isReset = false) {
     if (isRunning && !isReset) return; // Prevent changing routine while timer is running
 
     currentRoutineKey = key;
-    const routine = workoutRoutines[currentRoutineKey];
+    const routine = workoutRoutines[currentRoutineKey] || {};
 
     // NEW: Get custom break duration, defaulting to 3 if input is invalid
     const rawDuration = parseInt(interSetBreakInput.value);
     // Ensure duration is a positive number, min 1 second, default 3
     const breakDuration = Math.max(1, rawDuration || 3);
 
-    // If routine comes from schema JSON, build final steps directly
+    // Build final steps strictly from JSON-backed schema
     if (Array.isArray(routine.schemaExercises)) {
         exercises = buildStepsFromSchema(routine.schemaExercises, breakDuration);
     } else {
-        const rawExercises = routine.exercises;
-        // Get the expanded list of steps, handling two-sided and multi-set exercises
-        exercises = getExpandedExercises(rawExercises, breakDuration);
+        // No schema available: empty plan (no hardcoded fallback)
+        exercises = [];
     }
 
     // Initialize the UI and state
