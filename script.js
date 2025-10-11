@@ -108,14 +108,67 @@ function playHarmonicChime(options = {}) {
     }
 }
 
+// --- Audio Context Management (for iOS Safari/Firefox restrictions) ---
+let sharedAudioContext = null;
+let audioUnlockAttempted = false;
+
+function getSharedAudioContext() {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    if (!sharedAudioContext) {
+        try {
+            sharedAudioContext = new AudioContext();
+        } catch (e) {
+            console.warn('AudioContext init failed:', e);
+            return null;
+        }
+    }
+    if (sharedAudioContext.state === 'suspended') {
+        try { sharedAudioContext.resume(); } catch (e) {}
+    }
+    return sharedAudioContext;
+}
+
+function unlockAudioOnce() {
+    if (audioUnlockAttempted) return;
+    audioUnlockAttempted = true;
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
+    try {
+        // Play a silent buffer to fully unlock audio on iOS
+        const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        src.connect(ctx.destination);
+        src.start(0);
+        setTimeout(() => { try { src.disconnect(); } catch (e) {} }, 0);
+    } catch (e) {}
+}
+
+function setupAudioUnlockListeners() {
+    const once = () => {
+        unlockAudioOnce();
+        document.removeEventListener('touchstart', once, true);
+        document.removeEventListener('click', once, true);
+        if (typeof startButton !== 'undefined' && startButton) {
+            try { startButton.removeEventListener('click', once, { capture: true }); } catch (e) { /* ignore */ }
+        }
+    };
+    document.addEventListener('touchstart', once, true);
+    document.addEventListener('click', once, true);
+    if (typeof startButton !== 'undefined' && startButton) {
+        startButton.addEventListener('click', once, { capture: true });
+    }
+}
+
 /**
  * Acoustic blink (transition) using a pleasant harmonic chime.
  */
 function playBlinkSound() {
     // Deep, simple transition tone (original-style)
     try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        const ctx = new AudioContext();
+        const ctx = getSharedAudioContext();
+        if (!ctx) return;
         const now = ctx.currentTime;
 
         const osc = ctx.createOscillator();
@@ -133,7 +186,10 @@ function playBlinkSound() {
         osc.start(now);
         osc.stop(now + 0.22);
 
-        setTimeout(() => { try { ctx.close(); } catch(e){} }, 260);
+        // Cleanup nodes (do not close shared context)
+        setTimeout(() => {
+            try { osc.disconnect(); gain.disconnect(); } catch (e) {}
+        }, 260);
     } catch(e) {
         console.error('Blink sound failed:', e);
     }
@@ -145,8 +201,8 @@ function playBlinkSound() {
 function playCountdownBeep() {
     // Higher, bright short beep for last 3 seconds (original-style)
     try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        const ctx = new AudioContext();
+        const ctx = getSharedAudioContext();
+        if (!ctx) return;
         const now = ctx.currentTime;
 
         const osc = ctx.createOscillator();
@@ -164,7 +220,10 @@ function playCountdownBeep() {
         osc.start(now);
         osc.stop(now + 0.12);
 
-        setTimeout(() => { try { ctx.close(); } catch(e){} }, 180);
+        // Cleanup nodes (do not close shared context)
+        setTimeout(() => {
+            try { osc.disconnect(); gain.disconnect(); } catch (e) {}
+        }, 200);
     } catch(e) {
         console.error('Countdown beep failed:', e);
     }
@@ -569,6 +628,8 @@ interSetBreakInput.addEventListener('change', () => {
 
 // Initialize the app when the window loads
 window.onload = () => {
+    // Prepare audio unlock listeners for iOS Safari/Firefox
+    try { setupAudioUnlockListeners(); } catch (e) {}
     // First, integrate any custom workouts created on the Manage Workouts page
     ensureCustomWorkoutsInRoutinesAndSelector();
     // Then set the initial routine based on the selector's default value
