@@ -35,6 +35,57 @@ const exerciseListEl = document.getElementById('exercise-list');
 const bodyEl = document.body;
 const interSetBreakInput = document.getElementById('inter-set-break-input'); // NEW DOM element
 
+// --- Audio (iOS-friendly) ---
+let audioCtx = null;
+let audioUnlocked = false;
+
+function ensureAudioContext() {
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return null;
+        if (!audioCtx) {
+            audioCtx = new AudioContext();
+        }
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume().catch(() => {});
+        }
+        return audioCtx;
+    } catch (e) {
+        console.warn('AudioContext unavailable:', e);
+        return null;
+    }
+}
+
+function setupAudioUnlock() {
+    const unlock = () => {
+        try {
+            const ctx = ensureAudioContext();
+            if (ctx) {
+                // Play a near-silent tick to satisfy iOS gesture requirement
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                gain.gain.setValueAtTime(0.00001, now);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.01);
+                audioUnlocked = true;
+            }
+        } catch (e) {
+            // ignore
+        } finally {
+            window.removeEventListener('touchstart', unlock);
+            window.removeEventListener('mousedown', unlock);
+            window.removeEventListener('pointerdown', unlock);
+            if (startButton) startButton.removeEventListener('click', unlock);
+        }
+    };
+    window.addEventListener('touchstart', unlock, { once: true });
+    window.addEventListener('mousedown', unlock, { once: true });
+    window.addEventListener('pointerdown', unlock, { once: true });
+    if (startButton) startButton.addEventListener('click', unlock, { once: true });
+}
+
 // --- Utility Functions ---
 
 /**
@@ -108,66 +159,13 @@ function playHarmonicChime(options = {}) {
     }
 }
 
-// --- Audio Context Management (for iOS Safari/Firefox restrictions) ---
-let sharedAudioContext = null;
-let audioUnlockAttempted = false;
-
-function getSharedAudioContext() {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return null;
-    if (!sharedAudioContext) {
-        try {
-            sharedAudioContext = new AudioContext();
-        } catch (e) {
-            console.warn('AudioContext init failed:', e);
-            return null;
-        }
-    }
-    if (sharedAudioContext.state === 'suspended') {
-        try { sharedAudioContext.resume(); } catch (e) {}
-    }
-    return sharedAudioContext;
-}
-
-function unlockAudioOnce() {
-    if (audioUnlockAttempted) return;
-    audioUnlockAttempted = true;
-    const ctx = getSharedAudioContext();
-    if (!ctx) return;
-    try {
-        // Play a silent buffer to fully unlock audio on iOS
-        const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
-        const src = ctx.createBufferSource();
-        src.buffer = buffer;
-        src.connect(ctx.destination);
-        src.start(0);
-        setTimeout(() => { try { src.disconnect(); } catch (e) {} }, 0);
-    } catch (e) {}
-}
-
-function setupAudioUnlockListeners() {
-    const once = () => {
-        unlockAudioOnce();
-        document.removeEventListener('touchstart', once, true);
-        document.removeEventListener('click', once, true);
-        if (typeof startButton !== 'undefined' && startButton) {
-            try { startButton.removeEventListener('click', once, { capture: true }); } catch (e) { /* ignore */ }
-        }
-    };
-    document.addEventListener('touchstart', once, true);
-    document.addEventListener('click', once, true);
-    if (typeof startButton !== 'undefined' && startButton) {
-        startButton.addEventListener('click', once, { capture: true });
-    }
-}
-
 /**
  * Acoustic blink (transition) using a pleasant harmonic chime.
  */
 function playBlinkSound() {
     // Deep, simple transition tone (original-style)
     try {
-        const ctx = getSharedAudioContext();
+        const ctx = ensureAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
 
@@ -185,11 +183,6 @@ function playBlinkSound() {
         osc.connect(gain).connect(ctx.destination);
         osc.start(now);
         osc.stop(now + 0.22);
-
-        // Cleanup nodes (do not close shared context)
-        setTimeout(() => {
-            try { osc.disconnect(); gain.disconnect(); } catch (e) {}
-        }, 260);
     } catch(e) {
         console.error('Blink sound failed:', e);
     }
@@ -201,7 +194,7 @@ function playBlinkSound() {
 function playCountdownBeep() {
     // Higher, bright short beep for last 3 seconds (original-style)
     try {
-        const ctx = getSharedAudioContext();
+        const ctx = ensureAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
 
@@ -219,11 +212,6 @@ function playCountdownBeep() {
         osc.connect(gain).connect(ctx.destination);
         osc.start(now);
         osc.stop(now + 0.12);
-
-        // Cleanup nodes (do not close shared context)
-        setTimeout(() => {
-            try { osc.disconnect(); gain.disconnect(); } catch (e) {}
-        }, 200);
     } catch(e) {
         console.error('Countdown beep failed:', e);
     }
@@ -628,8 +616,9 @@ interSetBreakInput.addEventListener('change', () => {
 
 // Initialize the app when the window loads
 window.onload = () => {
-    // Prepare audio unlock listeners for iOS Safari/Firefox
-    try { setupAudioUnlockListeners(); } catch (e) {}
+    // Prepare audio unlock for iOS (bind to first gesture and Start click)
+    try { setupAudioUnlock(); } catch(e) { /* ignore */ }
+
     // First, integrate any custom workouts created on the Manage Workouts page
     ensureCustomWorkoutsInRoutinesAndSelector();
     // Then set the initial routine based on the selector's default value
