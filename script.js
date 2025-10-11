@@ -39,6 +39,11 @@ const interSetBreakInput = document.getElementById('inter-set-break-input'); // 
 let audioCtx = null;
 let audioUnlocked = false;
 
+// HTMLAudioElement-based iOS strategy
+let htmlAudio = null; // created synchronously from user gesture
+let soundEnabled = false; // toggle state
+const SoundURLs = { blink: null, beep: null }; // object URLs to pre-rendered tones
+
 function ensureAudioContext() {
     try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -87,6 +92,159 @@ function setupAudioUnlock() {
 }
 
 // --- Utility Functions ---
+
+/**
+ * Encode an AudioBuffer to a WAV Blob (PCM 16-bit mono/stereo)
+ */
+function audioBufferToWavBlob(buffer) {
+    const numOfChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format = 1; // PCM
+    const bitDepth = 16;
+
+    const samples = buffer.getChannelData(0);
+    const numFrames = buffer.length;
+    const blockAlign = numOfChannels * bitDepth / 8;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = numFrames * blockAlign;
+    const bufferSize = 44 + dataSize;
+    const arrayBuffer = new ArrayBuffer(bufferSize);
+    const view = new DataView(arrayBuffer);
+
+    function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    }
+
+    let offset = 0;
+    // RIFF header
+    writeString(view, offset, 'RIFF'); offset += 4;
+    view.setUint32(offset, 36 + dataSize, true); offset += 4;
+    writeString(view, offset, 'WAVE'); offset += 4;
+
+    // fmt chunk
+    writeString(view, offset, 'fmt '); offset += 4;
+    view.setUint32(offset, 16, true); offset += 4; // SubChunk1Size
+    view.setUint16(offset, format, true); offset += 2; // AudioFormat
+    view.setUint16(offset, numOfChannels, true); offset += 2; // NumChannels
+    view.setUint32(offset, sampleRate, true); offset += 4; // SampleRate
+    view.setUint32(offset, byteRate, true); offset += 4; // ByteRate
+    view.setUint16(offset, blockAlign, true); offset += 2; // BlockAlign
+    view.setUint16(offset, bitDepth, true); offset += 2; // BitsPerSample
+
+    // data chunk
+    writeString(view, offset, 'data'); offset += 4;
+    view.setUint32(offset, dataSize, true); offset += 4;
+
+    // Interleave channels if needed and convert to 16-bit PCM
+    if (numOfChannels === 2) {
+        const channelData0 = buffer.getChannelData(0);
+        const channelData1 = buffer.getChannelData(1);
+        let idx = 0;
+        for (let i = 0; i < numFrames; i++) {
+            // Left
+            let s = Math.max(-1, Math.min(1, channelData0[i]));
+            view.setInt16(offset + idx, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            idx += 2;
+            // Right
+            s = Math.max(-1, Math.min(1, channelData1[i]));
+            view.setInt16(offset + idx, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            idx += 2;
+        }
+    } else {
+        let idx = 0;
+        for (let i = 0; i < numFrames; i++) {
+            const s = Math.max(-1, Math.min(1, samples[i]));
+            view.setInt16(offset + idx, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            idx += 2;
+        }
+    }
+
+    return new Blob([view], { type: 'audio/wav' });
+}
+
+/**
+ * Render a simple tone to a WAV Blob via OfflineAudioContext
+ */
+async function renderToneBlob({ frequency = 440, duration = 0.2, sampleRate = 44100, type = 'sine', gain = 0.12 }) {
+    const length = Math.max(1, Math.floor(duration * sampleRate));
+    const offline = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, length, sampleRate);
+    const osc = offline.createOscillator();
+    const g = offline.createGain();
+
+    osc.type = type;
+    osc.frequency.value = frequency;
+
+    // Simple envelope
+    const now = 0;
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(gain, now + Math.min(0.02, duration * 0.2));
+    g.gain.exponentialRampToValueAtTime(0.0001, Math.max(duration - 0.01, 0.03));
+
+    osc.connect(g).connect(offline.destination);
+    osc.start(now);
+    osc.stop(duration);
+    const rendered = await offline.startRendering();
+    return audioBufferToWavBlob(rendered);
+}
+
+/**
+ * Sets up the sound enable/disable toggle that builds a shared HTMLAudioElement
+ * and pre-renders tone files for reliable iOS playback.
+ */
+function setupSoundToggle() {
+    const btn = document.getElementById('sound-toggle');
+    if (!btn) return;
+
+    const setBtn = (enabled) => {
+        btn.textContent = enabled ? 'Disable Sounds' : 'Enable Sounds (iOS)';
+        const hint = document.getElementById('sound-toggle-hint');
+        if (hint) hint.textContent = enabled ? 'Sounds enabled. Toggle to disable.' : 'Tap once to enable sounds on iPhone browsers. You can disable again anytime.';
+    };
+    setBtn(soundEnabled);
+
+    btn.addEventListener('click', async () => {
+        // Toggle off
+        if (soundEnabled) {
+            soundEnabled = false;
+            try { if (htmlAudio) { htmlAudio.pause(); htmlAudio.src = ''; } } catch(_) {}
+            if (SoundURLs.blink) { URL.revokeObjectURL(SoundURLs.blink); SoundURLs.blink = null; }
+            if (SoundURLs.beep) { URL.revokeObjectURL(SoundURLs.beep); SoundURLs.beep = null; }
+            setBtn(false);
+            return;
+        }
+
+        // Toggle on: create the HTMLAudioElement synchronously in this user gesture
+        htmlAudio = new Audio();
+        htmlAudio.preload = 'auto';
+        htmlAudio.crossOrigin = 'anonymous';
+
+        // Pre-render tones
+        try {
+            const [blinkBlob, beepBlob] = await Promise.all([
+                renderToneBlob({ frequency: 220, duration: 0.22, type: 'sine', gain: 0.12 }),
+                renderToneBlob({ frequency: 880, duration: 0.12, type: 'square', gain: 0.10 }),
+            ]);
+            SoundURLs.blink = URL.createObjectURL(blinkBlob);
+            SoundURLs.beep = URL.createObjectURL(beepBlob);
+        } catch (e) {
+            console.warn('Tone pre-render failed, falling back to WebAudio only.', e);
+        }
+
+        soundEnabled = true;
+        setBtn(true);
+
+        // Play a confirmation beep using the shared element if we have it
+        try {
+            if (SoundURLs.beep) {
+                htmlAudio.src = SoundURLs.beep;
+                const p = htmlAudio.play();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+            }
+        } catch (_) { /* ignore */ }
+    });
+}
 
 /**
  * Formats seconds into MM:SS string.
@@ -163,8 +321,15 @@ function playHarmonicChime(options = {}) {
  * Acoustic blink (transition) using a pleasant harmonic chime.
  */
 function playBlinkSound() {
-    // Deep, simple transition tone (original-style)
+    // Prefer HTMLAudioElement strategy if enabled and URL ready
     try {
+        if (soundEnabled && htmlAudio && SoundURLs.blink) {
+            htmlAudio.src = SoundURLs.blink;
+            const p = htmlAudio.play();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+            return;
+        }
+        // Fallback: Web Audio
         const ctx = ensureAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
@@ -192,8 +357,15 @@ function playBlinkSound() {
  * Bright countdown beep (last 3 seconds) with harmonic support.
  */
 function playCountdownBeep() {
-    // Higher, bright short beep for last 3 seconds (original-style)
+    // Higher, bright short beep for last 3 seconds (prefer HTMLAudio when enabled)
     try {
+        if (soundEnabled && htmlAudio && SoundURLs.beep) {
+            htmlAudio.src = SoundURLs.beep;
+            const p = htmlAudio.play();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+            return;
+        }
+        // Fallback: Web Audio
         const ctx = ensureAudioContext();
         if (!ctx) return;
         const now = ctx.currentTime;
@@ -618,6 +790,9 @@ interSetBreakInput.addEventListener('change', () => {
 window.onload = () => {
     // Prepare audio unlock for iOS (bind to first gesture and Start click)
     try { setupAudioUnlock(); } catch(e) { /* ignore */ }
+
+    // Initialize iOS HTMLAudioElement toggle
+    try { setupSoundToggle(); } catch (e) { console.warn('Sound toggle init failed', e); }
 
     // First, integrate any custom workouts created on the Manage Workouts page
     ensureCustomWorkoutsInRoutinesAndSelector();

@@ -41,13 +41,21 @@
 
 
         <!-- Controls -->
-        <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4 mb-10">
+        <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4 mb-6">
             <button id="start-button" class="bg-primary text-white py-3 px-8 rounded-full font-bold shadow-lg hover:shadow-xl transition duration-300 transform hover:scale-[1.03] active:scale-[0.98] disabled:opacity-50 text-lg">
                 Start Workout
             </button>
             <button id="reset-button" class="bg-gray-300 text-gray-800 py-3 px-8 rounded-full font-bold shadow-md hover:shadow-lg transition duration-300 transform hover:scale-[1.03] active:scale-[0.98] disabled:opacity-50 text-lg" disabled>
                 Reset
             </button>
+        </div>
+
+        <!-- Sound Toggle (iOS unlock via HTMLAudioElement) -->
+        <div class="w-full mb-10">
+            <button id="sound-toggle" class="w-full text-sm bg-emerald-100 text-emerald-800 px-4 py-2 rounded-xl border border-emerald-200 hover:bg-emerald-200 transition">
+                Enable Sounds (iOS)
+            </button>
+            <p id="sound-toggle-hint" class="mt-2 text-xs text-gray-500">Tap once to enable sounds on iPhone browsers. You can disable again anytime.</p>
         </div>
 
         <!-- Exercise List -->
