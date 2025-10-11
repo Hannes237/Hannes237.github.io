@@ -1,4 +1,5 @@
 // --- Workout Data ---
+// Will be overridden on load by workouts.json if available
 const workoutRoutines = {
     "morning": {
         name: "Morning Mobility Mantra",
@@ -11,8 +12,121 @@ const workoutRoutines = {
             { name: "Swan Rises", duration: 30, color: "bg-neutral", reps: 10 },
             { name: "Relaxed Child's Pose", duration: 30, color: "bg-neutral" },
         ]
+        // Optionally, when JSON is loaded, a field `schemaExercises` will be added
     }
 };
+
+// JSON-based default/custom workout storage key
+const WORKOUT_JSON_STORAGE_KEY = 'workoutJSONv1';
+
+/**
+ * Load workout JSON from localStorage; if not available, fetch workouts.json from the server,
+ * store it locally, and return the parsed object. Expected shape:
+ * { name: string, exercises: Array<ExerciseOrSuperset> }
+ */
+async function loadWorkoutJSON() {
+    // Try localStorage first
+    try {
+        const raw = localStorage.getItem(WORKOUT_JSON_STORAGE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object' && Array.isArray(parsed.exercises)) {
+                return parsed;
+            }
+        }
+    } catch (e) { /* ignore and try fetch */ }
+
+    // Fallback: fetch bundled file
+    try {
+        const res = await fetch('workouts.json', { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        try { localStorage.setItem(WORKOUT_JSON_STORAGE_KEY, JSON.stringify(data)); } catch (_) {}
+        return data;
+    } catch (e) {
+        console.warn('Failed to load workouts.json; using built-in routine. Error:', e);
+        return null;
+    }
+}
+
+/**
+ * Build final expanded steps from schema-based exercises, supporting:
+ * - exercise_name, duration (seconds), reps, sets, bilaterally
+ * - super_set: list of exercises; optional sets on the superset container
+ * Inter-set rests are inserted between sets (or superset rounds) using provided rest duration.
+ */
+function buildStepsFromSchema(items, interSetRestDuration) {
+    const expanded = [];
+
+    // Helper to push a step
+    const pushStep = (name, duration, reps, opts = {}) => {
+        const step = {
+            name,
+            duration: Math.max(1, Number(duration) || 0),
+            color: opts.color || 'bg-neutral'
+        };
+        if (reps && Number(reps) > 0) step.reps = Number(reps);
+        if (opts.isInterSetRest) step.isInterSetRest = true;
+        expanded.push(step);
+    };
+
+    const asArray = (v) => Array.isArray(v) ? v : (v ? [v] : []);
+
+    function processExercise(item, ctx) {
+        const title = String(item.exercise_name || item.name || '').trim();
+        if (!title) return;
+        const hasDuration = Number.isFinite(Number(item.duration)) && Number(item.duration) > 0;
+        const reps = Number.isFinite(Number(item.reps)) && Number(item.reps) > 0 ? Number(item.reps) : undefined;
+        const sets = Math.max(1, Number(item.sets) || 1);
+        const bilateral = !!item.bilaterally;
+        const baseDuration = hasDuration ? Math.round(Number(item.duration)) : 0;
+
+        for (let s = 1; s <= sets; s++) {
+            const setSuffix = sets > 1 ? ` (Set ${s}/${sets})` : '';
+            const breakNote = (s < sets && interSetRestDuration > 0 && !ctx.inSuperset) ? ` (break: ${interSetRestDuration}s)` : '';
+
+            if (bilateral) {
+                const sideDuration = hasDuration ? Math.max(1, Math.round(baseDuration / 2)) : 0;
+                // Left
+                pushStep(`${title}${setSuffix} - Left`, sideDuration, reps);
+                // Right (append break note when not inside a superset and break follows)
+                pushStep(`${title}${setSuffix} - Right${breakNote}`, sideDuration, reps);
+            } else {
+                const d = hasDuration ? baseDuration : 1; // ensure at least 1s to keep timer functional
+                pushStep(`${title}${setSuffix}${breakNote}`, d, reps);
+            }
+
+            // Add inter-set rest only for standalone exercises
+            if (!ctx.inSuperset && s < sets) {
+                pushStep('Rest between sets', interSetRestDuration, undefined, { isInterSetRest: true, color: 'bg-gray-300' });
+            }
+        }
+    }
+
+    function processItem(item) {
+        if (!item) return;
+        if (Array.isArray(item.super_set)) {
+            const groupSets = Math.max(1, Number(item.sets) || 1);
+            for (let gs = 1; gs <= groupSets; gs++) {
+                const roundStart = expanded.length;
+                const children = asArray(item.super_set);
+                children.forEach(child => processExercise(child, { inSuperset: true }));
+                // After finishing a round, append break note to the very last child in this round
+                if (gs < groupSets && interSetRestDuration > 0 && expanded.length > roundStart) {
+                    const lastIdx = expanded.length - 1;
+                    expanded[lastIdx].name += ` (break: ${interSetRestDuration}s)`;
+                    // Insert the actual inter-set rest after the round
+                    pushStep('Rest between sets', interSetRestDuration, undefined, { isInterSetRest: true, color: 'bg-gray-300' });
+                }
+            }
+        } else {
+            processExercise(item, { inSuperset: false });
+        }
+    }
+
+    asArray(items).forEach(processItem);
+    return expanded;
+}
 
 // --- Global State Variables ---
 let currentRoutineKey = "morning"; // Default routine
@@ -706,17 +820,23 @@ function loadRoutine(key, isReset = false) {
     if (isRunning && !isReset) return; // Prevent changing routine while timer is running
 
     currentRoutineKey = key;
-    const rawExercises = workoutRoutines[currentRoutineKey].exercises;
+    const routine = workoutRoutines[currentRoutineKey];
 
     // NEW: Get custom break duration, defaulting to 3 if input is invalid
     const rawDuration = parseInt(interSetBreakInput.value);
     // Ensure duration is a positive number, min 1 second, default 3
     const breakDuration = Math.max(1, rawDuration || 3);
-    
-    // 1. Get the expanded list of steps, handling two-sided and multi-set exercises
-    exercises = getExpandedExercises(rawExercises, breakDuration); // Pass duration
 
-    // 2. Initialize the UI and state
+    // If routine comes from schema JSON, build final steps directly
+    if (Array.isArray(routine.schemaExercises)) {
+        exercises = buildStepsFromSchema(routine.schemaExercises, breakDuration);
+    } else {
+        const rawExercises = routine.exercises;
+        // Get the expanded list of steps, handling two-sided and multi-set exercises
+        exercises = getExpandedExercises(rawExercises, breakDuration);
+    }
+
+    // Initialize the UI and state
     initializeWorkout();
 
     // Ensure timer is stopped and buttons are in initial state if not a reset
@@ -789,14 +909,29 @@ interSetBreakInput.addEventListener('change', () => {
 });
 
 // Initialize the app when the window loads
-window.onload = () => {
+window.onload = async () => {
     // Prepare audio unlock for iOS (bind to first gesture and Start click)
     try { setupAudioUnlock(); } catch(e) { /* ignore */ }
 
     // Initialize iOS HTMLAudioElement toggle
     try { setupSoundToggle(); } catch (e) { console.warn('Sound toggle init failed', e); }
 
-    // First, integrate any custom workouts created on the Manage Workouts page
+    // Attempt to load JSON-defined default workout
+    try {
+        const jsonData = await loadWorkoutJSON();
+        if (jsonData && Array.isArray(jsonData.exercises)) {
+            // Override the default morning routine with JSON-backed schema
+            workoutRoutines.morning.name = String(jsonData.name || workoutRoutines.morning.name || 'Custom Workout');
+            workoutRoutines.morning.schemaExercises = jsonData.exercises;
+            // Update selector label if needed
+            const opt = Array.from(routineSelector.options).find(o => o.value === 'morning');
+            if (opt) opt.textContent = workoutRoutines.morning.name;
+        }
+    } catch (e) {
+        console.warn('Workout JSON load failed; continuing with built-in routine.', e);
+    }
+
+    // Integrate any legacy custom workouts (kept for backward compatibility)
     ensureCustomWorkoutsInRoutinesAndSelector();
     // Then set the initial routine based on the selector's default value
     loadRoutine(routineSelector.value);
