@@ -4,33 +4,49 @@
       "name": "Morning Mobility Mantra",
       "exercises": [
         {
-          "exercise_name": "Malasana Squat",
-          "duration": 5
+          "superset": [
+            {
+              "exercise_name": "Malasana Squat",
+              "duration": 30
+            },
+            {
+              "exercise_name": "Standing Forward Fold",
+              "duration": 30
+            }
+          ],
+          "sets": 3
         },
         {
-          "exercise_name": "Standing Forward Fold",
-          "duration": 5
-        },
-        {
-          "exercise_name": "Deep Calf Stretch",
-          "reps": 10
-        },
-        {
-          "exercise_name": "Downward Dog",
-          "duration": 30
+          "superset": [
+            {
+              "exercise_name": "Deep Calf Stretch",
+              "duration": 30
+            },
+            {
+              "exercise_name": "Downward Dog",
+              "duration": 30
+            }
+          ],
+          "sets": 3
         },
         {
           "exercise_name": "Low Lunge to Half Split",
           "reps": 10,
-          "bilaterally": true
+          "bilaterally": true,
+          "sets": 3
         },
         {
-          "exercise_name": "Swan Rises",
-          "duration": 30
-        },
-        {
-          "exercise_name": "Relaxed Child's Pose",
-          "duration": 30
+          "superset": [
+            {
+              "exercise_name": "Swan Rises",
+              "duration": 30
+            },
+            {
+              "exercise_name": "Relaxed Child's Pose",
+              "duration": 30
+            }
+          ],
+          "sets": 3
         }
       ]
     },
