@@ -1046,6 +1046,12 @@ function loadRoutine(key, isReset = false) {
         timerInterval = null;
         isRunning = false;
     }
+
+    // After initializing workout, always reset UI state
+    startButton.disabled = false;
+    startButton.textContent = "Start Workout";
+    resetButton.disabled = false;
+    if (nextRepsButton) nextRepsButton.classList.add('hidden');
 }
 
 // --- Custom Workouts Integration ---
@@ -1130,6 +1136,11 @@ routineSelector.addEventListener('change', (event) => {
     // Remove blink effect on selection change
     bodyEl.classList.remove('page-blink');
     loadRoutine(event.target.value);
+    // Force UI to initial state: Start enabled, Reset enabled, Next hidden
+    startButton.disabled = false;
+    startButton.textContent = "Start Workout";
+    resetButton.disabled = false;
+    if (nextRepsButton) nextRepsButton.classList.add('hidden');
 });
 
 // NEW: Listener for inter-set break change
