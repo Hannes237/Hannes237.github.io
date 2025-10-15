@@ -11,40 +11,31 @@ const workoutRoutines = {
 const WORKOUT_JSON_STORAGE_KEY = 'workoutJSONv1';
 
 /**
- * Load workout JSON from the file first; on failure, fallback to localStorage cache.
- * Expected shape: { name: string, exercises: Array<ExerciseOrSuperset> }
+ * Load all workouts from workouts.json (or localStorage cache).
+ * Expected shape: { workouts: Array<{ name, exercises, ... }> }
  */
-async function loadWorkoutJSON() {
-    // 1) Prefer fresh file from server/disk each time
+async function loadAllWorkoutsJSON() {
     try {
         const res = await fetch('workouts.json', {cache: 'no-store'});
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        // Update cache for offline use
-        try {
+        if (data && Array.isArray(data.workouts)) {
             localStorage.setItem(WORKOUT_JSON_STORAGE_KEY, JSON.stringify(data));
-        } catch (_) {
+            return data.workouts;
         }
-        return data;
     } catch (e) {
         console.warn('Fetching workouts.json failed, falling back to cached copy if available.', e);
     }
-
-    // 2) Fallback: localStorage cache
     try {
         const raw = localStorage.getItem(WORKOUT_JSON_STORAGE_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && Array.isArray(parsed.exercises)) {
-                return parsed;
+            if (parsed && Array.isArray(parsed.workouts)) {
+                return parsed.workouts;
             }
         }
-    } catch (e) {
-        // ignore
-    }
-
-    // 3) Nothing available
-    return null;
+    } catch (e) {}
+    return [];
 }
 
 /**
@@ -1007,6 +998,10 @@ function loadRoutine(key, isReset = false) {
     currentRoutineKey = key;
     const routine = workoutRoutines[currentRoutineKey] || {};
 
+    // Debug: Log loaded routine and exercises
+    console.log('Selected routine:', routine);
+    console.log('Schema exercises:', routine.schemaExercises);
+
     // NEW: Get custom break duration, defaulting to 3 if input is invalid
     const rawDuration = parseInt(interSetBreakInput.value);
     // Ensure duration is a positive number, min 1 second, default 3
@@ -1015,9 +1010,11 @@ function loadRoutine(key, isReset = false) {
     // Build final steps strictly from JSON-backed schema
     if (Array.isArray(routine.schemaExercises)) {
         exercises = buildStepsFromSchema(routine.schemaExercises, breakDuration);
+        console.log('Expanded exercises:', exercises);
     } else {
         // No schema available: empty plan (no hardcoded fallback)
         exercises = [];
+        console.log('No exercises found for routine');
     }
 
     // Initialize the UI and state
@@ -1126,8 +1123,7 @@ window.onload = async () => {
     // Prepare audio unlock for iOS (bind to first gesture and Start click)
     try {
         setupAudioUnlock();
-    } catch (e) { /* ignore */
-    }
+    } catch (e) { /* ignore */ }
 
     // Initialize iOS HTMLAudioElement toggle
     try {
@@ -1136,25 +1132,35 @@ window.onload = async () => {
         console.warn('Sound toggle init failed', e);
     }
 
-    // Attempt to load JSON-defined default workout
-    try {
-        const jsonData = await loadWorkoutJSON();
-        if (jsonData && Array.isArray(jsonData.exercises)) {
-            // Override the default morning routine with JSON-backed schema
-            workoutRoutines.morning.name = String(jsonData.name || workoutRoutines.morning.name || 'Custom Workout');
-            workoutRoutines.morning.schemaExercises = jsonData.exercises;
-            // Update selector label if needed
-            const opt = Array.from(routineSelector.options).find(o => o.value === 'morning');
-            if (opt) opt.textContent = workoutRoutines.morning.name;
-        }
-    } catch (e) {
-        console.warn('Workout JSON load failed; continuing with built-in routine.', e);
+    // Load all workouts from workouts.json
+    let allWorkouts = await loadAllWorkoutsJSON();
+    if (Array.isArray(allWorkouts) && allWorkouts.length > 0) {
+        // Populate selector and routines
+        routineSelector.innerHTML = '';
+        allWorkouts.forEach((w, i) => {
+            const key = 'json_' + i;
+            workoutRoutines[key] = {
+                name: w.name,
+                schemaExercises: w.exercises
+            };
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = w.name;
+            routineSelector.appendChild(opt);
+        });
+        // Select first workout by default
+        routineSelector.value = 'json_0';
+        currentRoutineKey = 'json_0';
+        loadRoutine('json_0');
+    } else {
+        // Fallback: no workouts found
+        routineSelector.innerHTML = '<option value="">No workouts found</option>';
+        exercises = [];
+        initializeWorkout();
     }
 
     // Integrate any legacy custom workouts (kept for backward compatibility)
     ensureCustomWorkoutsInRoutinesAndSelector();
-    // Then set the initial routine based on the selector's default value
-    loadRoutine(routineSelector.value);
 };
 
 
