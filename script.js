@@ -170,6 +170,7 @@ let timeRemaining = 0;
 let timerInterval = null;
 let isRunning = false;
 let totalWorkoutDuration = 0;
+let wakeLock = null; // Wake Lock API object
 
 // --- DOM elements ---
 const routineSelector = document.getElementById('routine-selector');
@@ -931,13 +932,13 @@ function toggleTimer() {
         clearInterval(timerInterval);
         timerInterval = null;
         isRunning = false;
+        // Do NOT release wake lock here
     } else {
         // Start
         // Ensure iOS-safe audio is initialized synchronously within this user gesture
         try {
             if (typeof enableSoundsForIOSQuick === 'function') enableSoundsForIOSQuick();
-        } catch (_) {
-        }
+        } catch (_) {}
         const currentEx = exercises[currentExerciseIndex];
         const isRepsStep = currentEx && Number(currentEx.reps) > 0 && !currentEx.isInterSetRest;
         if (isRepsStep) {
@@ -946,12 +947,40 @@ function toggleTimer() {
             timerInterval = null;
             isRunning = false;
             updateUI();
-            return;
+            // Do NOT release wake lock here
+        } else {
+            isRunning = true;
+            requestWakeLock(); // Request wake lock when timer starts
+            timerInterval = setInterval(timerTick, 1000);
         }
-        isRunning = true;
-        timerInterval = setInterval(timerTick, 1000);
     }
     updateUI();
+}
+
+/**
+ * Requests a wake lock to prevent the device from sleeping.
+ */
+async function requestWakeLock() {
+    if ('wakeLock' in navigator) {
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => {
+                wakeLock = null;
+            });
+        } catch (err) {
+            console.warn('Wake Lock request failed:', err);
+        }
+    }
+}
+
+/**
+ * Releases the wake lock if active.
+ */
+function releaseWakeLock() {
+    if (wakeLock) {
+        wakeLock.release().catch(() => {});
+        wakeLock = null;
+    }
 }
 
 /**
@@ -961,6 +990,7 @@ function resetWorkout() {
     clearInterval(timerInterval);
     timerInterval = null;
     isRunning = false;
+    releaseWakeLock(); // Release wake lock on reset
 
     // Remove blink effect
     bodyEl.classList.remove('page-blink');
@@ -1004,6 +1034,7 @@ function finishWorkout() {
     resetButton.disabled = false;
     routineSelector.disabled = false; // Re-enable selector after finishing
     interSetBreakInput.disabled = false; // Re-enable input after finishing
+    releaseWakeLock(); // Release wake lock ONLY on workout completion
     console.log("Workout Finished!");
 }
 
