@@ -640,12 +640,14 @@ function getVisibleExercises(currentIdx, exercises) {
     for (let i = 0; i < exercises.length; i++) {
         if (!exercises[i].isInterSetRest) {
             visible.push({...exercises[i], originalIndex: i});
+            // Insert the next break immediately after the current exercise
+            if (i === currentIdx) {
+                const nextBreakIdx = getNextBreakIndex(currentIdx, exercises);
+                if (nextBreakIdx !== -1 && nextBreakIdx > currentIdx) {
+                    visible.push({...exercises[nextBreakIdx], originalIndex: nextBreakIdx});
+                }
+            }
         }
-    }
-    // Add only the next break step
-    const nextBreakIdx = getNextBreakIndex(currentIdx, exercises);
-    if (nextBreakIdx !== -1) {
-        visible.push({...exercises[nextBreakIdx], originalIndex: nextBreakIdx});
     }
     return visible;
 }
@@ -685,9 +687,13 @@ function initializeWorkout() {
     }).join('');
 
     // 4. Set initial state
+    // Find the first non-break exercise
     currentExerciseIndex = 0;
+    while (currentExerciseIndex < exercises.length && exercises[currentExerciseIndex].isInterSetRest) {
+        currentExerciseIndex++;
+    }
     // Handle case where exercises list might be empty
-    timeRemaining = exercises.length > 0 ? exercises[0].duration : 0;
+    timeRemaining = exercises.length > 0 ? exercises[currentExerciseIndex]?.duration || 0 : 0;
     updateUI();
 }
 
@@ -707,7 +713,12 @@ function nextExercise() {
         prevItem.querySelectorAll('span').forEach(span => span.style.color = '');
     }
 
-    currentExerciseIndex++;
+    // Advance to the next non-break exercise
+    do {
+        currentExerciseIndex++;
+    } while (
+        currentExerciseIndex < exercises.length && exercises[currentExerciseIndex].isInterSetRest
+    );
 
     if (currentExerciseIndex < exercises.length) {
         // Move to the next exercise
@@ -788,10 +799,31 @@ function updateUI() {
         return;
     }
 
+    // --- DYNAMIC EXERCISE LIST RENDERING ---
+    const visibleExercises = getVisibleExercises(currentExerciseIndex, exercises);
+    exerciseListEl.innerHTML = visibleExercises.map((ex, index) => {
+        const isInterSetRest = ex.isInterSetRest;
+        const isSideSplit = ex.name.includes(' - Left') || ex.name.includes(' - Right');
+        let nameClasses = 'font-medium text-gray-700';
+        let listItemClasses = 'bg-gray-100 shadow-sm hover:shadow-md hover:bg-emerald-50 transform hover:scale-[1.01]';
+        if (isInterSetRest) {
+            nameClasses = 'text-gray-600 text-sm italic';
+            listItemClasses = 'bg-gray-200 text-gray-600 shadow-sm';
+        } else if (isSideSplit) {
+            nameClasses = 'text-gray-700 text-base';
+        }
+        return `
+        <li id="item-${ex.originalIndex}" class="flex justify-between items-center p-4 rounded-xl transition-all duration-300 ${listItemClasses}">
+            <span class="${nameClasses} transition-colors duration-300">${ex.name}</span>
+            <span class="font-mono text-sm text-gray-500 transition-colors duration-300">${ex.reps ? `${ex.reps} reps` : formatTime(ex.duration)}</span>
+        </li>
+    `;
+    }).join('');
+
+    // 1. Update Current Exercise and Timer
     const currentEx = exercises[currentExerciseIndex];
     const isRepsStep = currentEx && Number(currentEx.reps) > 0 && !currentEx.isInterSetRest;
 
-    // 1. Update Current Exercise and Timer
     if (isRepsStep) {
         timerDisplayEl.textContent = "--:--";
     } else {
