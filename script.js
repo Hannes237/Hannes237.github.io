@@ -113,12 +113,22 @@ function buildStepsFromSchema(items, interSetRestDuration) {
 
     function processItem(item) {
         if (!item) return;
-        if (Array.isArray(item.super_set)) {
+        // Support both 'superset' and 'super_set' keys
+        const supersetBlock = Array.isArray(item.superset) ? item.superset : (Array.isArray(item.super_set) ? item.super_set : null);
+        if (supersetBlock) {
             const groupSets = Math.max(1, Number(item.sets) || 1);
             for (let gs = 1; gs <= groupSets; gs++) {
                 const roundStart = expanded.length;
-                const children = asArray(item.super_set);
-                children.forEach(child => processExercise(child, {inSuperset: true}));
+                supersetBlock.forEach((child, idx) => {
+                    processExercise(child, {inSuperset: true});
+                    // Insert rest between superset exercises except after last
+                    if (idx < supersetBlock.length - 1 && interSetRestDuration > 0) {
+                        pushStep('Rest between superset exercises', interSetRestDuration, undefined, {
+                            isInterSetRest: true,
+                            color: 'bg-gray-300'
+                        });
+                    }
+                });
                 // After finishing a round, insert an inter-set rest (no annotation in names)
                 if (gs < groupSets && interSetRestDuration > 0 && expanded.length > roundStart) {
                     pushStep('Rest between sets', interSetRestDuration, undefined, {
@@ -900,6 +910,16 @@ function updateUI() {
         routineSelector.disabled = false;
         interSetBreakInput.disabled = false; // Enable input when paused or reset
     }
+}
+
+// Render all exercises in the expanded list
+function renderExerciseList() {
+    exerciseListEl.innerHTML = exercises.map((ex, index) => {
+        // Show name and reps if present
+        let label = ex.name;
+        if (ex.reps) label += ` x${ex.reps}`;
+        return `<li>${label}</li>`;
+    }).join('');
 }
 
 /**

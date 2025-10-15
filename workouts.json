@@ -3,22 +3,61 @@
     {
       "name": "Morning Mobility Mantra",
       "exercises": [
-        { "exercise_name": "Malasana Squat", "duration": 5},
-        { "exercise_name": "Standing Forward Fold", "duration": 5 },
-        { "exercise_name": "Deep Calf Stretch", "reps": 10 },
-        { "exercise_name": "Downward Dog", "duration": 30 },
-        { "exercise_name": "Low Lunge to Half Split", "reps": 10, "bilaterally": true },
-        { "exercise_name": "Swan Rises", "duration": 30},
-        { "exercise_name": "Relaxed Child's Pose", "duration": 30 }
+        {
+          "exercise_name": "Malasana Squat",
+          "duration": 5
+        },
+        {
+          "exercise_name": "Standing Forward Fold",
+          "duration": 5
+        },
+        {
+          "exercise_name": "Deep Calf Stretch",
+          "reps": 10
+        },
+        {
+          "exercise_name": "Downward Dog",
+          "duration": 30
+        },
+        {
+          "exercise_name": "Low Lunge to Half Split",
+          "reps": 10,
+          "bilaterally": true
+        },
+        {
+          "exercise_name": "Swan Rises",
+          "duration": 30
+        },
+        {
+          "exercise_name": "Relaxed Child's Pose",
+          "duration": 30
+        }
       ]
     },
     {
       "name": "Superset Strength Starter",
-      "superset": true,
-      "sets": 3,
       "exercises": [
-        { "exercise_name": "Push Ups", "reps": 10 },
-        { "exercise_name": "Bodyweight Squats", "reps": 12 }
+        {
+          "superset": [
+            {
+              "exercise_name": "Push Ups",
+              "reps": 10
+            },
+            {
+              "exercise_name": "Bodyweight Squats",
+              "reps": 12
+            }
+          ],
+          "sets": 3
+        },
+        {
+          "exercise_name": "Lunges",
+          "reps": 10
+        },
+        {
+          "exercise_name": "Bicep curl",
+          "reps": 12
+        }
       ]
     }
   ]

@@ -121,10 +121,49 @@
     return list;
   }
 
+  function expandExercises(exercises) {
+    const expanded = [];
+    for (const ex of exercises) {
+      // Handle superset
+      if (ex.superset && Array.isArray(ex.superset)) {
+        const sets = Number.isFinite(ex.sets) && ex.sets > 0 ? ex.sets : 1;
+        for (let i = 0; i < sets; i++) {
+          for (const s of ex.superset) {
+            // Use exercise_name, name, or fallback to 'Exercise' if missing
+            const label = s.exercise_name || s.name || 'Exercise';
+            expanded.push({
+              ...s,
+              name: label + ' (SuperSet)',
+              exercise_name: undefined // remove to avoid confusion
+            });
+          }
+        }
+      } else if (Number.isFinite(ex.sets) && ex.sets > 1) {
+        // Repeat exercise for number of sets
+        const label = ex.exercise_name || ex.name || 'Exercise';
+        for (let i = 0; i < ex.sets; i++) {
+          expanded.push({
+            ...ex,
+            name: label
+          });
+        }
+      } else {
+        // Single exercise
+        const label = ex.exercise_name || ex.name || 'Exercise';
+        expanded.push({
+          ...ex,
+          name: label
+        });
+      }
+    }
+    return expanded;
+  }
+
   function populateEditor(w){
     nameInput.value = w.name || '';
     rowsTbody.innerHTML = '';
-    (w.exercises || []).forEach(ex => addExerciseRow(ex));
+    const expanded = expandExercises(w.exercises || []);
+    expanded.forEach(ex => addExerciseRow(ex));
     deleteBtn.classList.toggle('hidden', !w.id);
   }
 
