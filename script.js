@@ -17,11 +17,14 @@ const WORKOUT_JSON_STORAGE_KEY = 'workoutJSONv1';
 async function loadWorkoutJSON() {
     // 1) Prefer fresh file from server/disk each time
     try {
-        const res = await fetch('workouts.json', { cache: 'no-store' });
+        const res = await fetch('workouts.json', {cache: 'no-store'});
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         // Update cache for offline use
-        try { localStorage.setItem(WORKOUT_JSON_STORAGE_KEY, JSON.stringify(data)); } catch (_) {}
+        try {
+            localStorage.setItem(WORKOUT_JSON_STORAGE_KEY, JSON.stringify(data));
+        } catch (_) {
+        }
         return data;
     } catch (e) {
         console.warn('Fetching workouts.json failed, falling back to cached copy if available.', e);
@@ -88,7 +91,7 @@ function buildStepsFromSchema(items, interSetRestDuration) {
             const setSuffix = sets > 1 ? ` (Set ${s}/${sets})` : '';
 
             if (bilateral) {
-                const sideDuration = hasDuration ? Math.max(1, Math.round(baseDuration / 2)) : 0;
+                const sideDuration = hasDuration ? baseDuration : 0;
                 // Left
                 pushStep(`${title}${setSuffix} - Left`, sideDuration, reps);
                 // Right
@@ -100,7 +103,10 @@ function buildStepsFromSchema(items, interSetRestDuration) {
 
             // Add inter-set rest only for standalone exercises
             if (!ctx.inSuperset && s < sets) {
-                pushStep('Rest between sets', interSetRestDuration, undefined, { isInterSetRest: true, color: 'bg-gray-300' });
+                pushStep('Rest between sets', interSetRestDuration, undefined, {
+                    isInterSetRest: true,
+                    color: 'bg-gray-300'
+                });
             }
         }
     }
@@ -112,14 +118,17 @@ function buildStepsFromSchema(items, interSetRestDuration) {
             for (let gs = 1; gs <= groupSets; gs++) {
                 const roundStart = expanded.length;
                 const children = asArray(item.super_set);
-                children.forEach(child => processExercise(child, { inSuperset: true }));
+                children.forEach(child => processExercise(child, {inSuperset: true}));
                 // After finishing a round, insert an inter-set rest (no annotation in names)
                 if (gs < groupSets && interSetRestDuration > 0 && expanded.length > roundStart) {
-                    pushStep('Rest between sets', interSetRestDuration, undefined, { isInterSetRest: true, color: 'bg-gray-300' });
+                    pushStep('Rest between sets', interSetRestDuration, undefined, {
+                        isInterSetRest: true,
+                        color: 'bg-gray-300'
+                    });
                 }
             }
         } else {
-            processExercise(item, { inSuperset: false });
+            processExercise(item, {inSuperset: false});
         }
     }
 
@@ -132,12 +141,12 @@ function buildStepsFromSchema(items, interSetRestDuration) {
         // After finishing each top-level item (exercise or superset), add a rest before the next item
         if (produced > 0 && hasNext && interSetRestDuration > 0) {
             const lastIdx = expanded.length - 1;
-            // Annotate the last step name to indicate upcoming break
-            if (expanded[lastIdx] && expanded[lastIdx].name && !expanded[lastIdx].isInterSetRest) {
-                expanded[lastIdx].name += ` (break: ${interSetRestDuration}s)`;
-            }
+
             // Insert actual rest between exercises
-            pushStep('Rest between exercises', interSetRestDuration, undefined, { isInterSetRest: true, color: 'bg-gray-300' });
+            pushStep('Rest between exercises', interSetRestDuration, undefined, {
+                isInterSetRest: true,
+                color: 'bg-gray-300'
+            });
         }
     }
     return expanded;
@@ -172,7 +181,7 @@ let audioUnlocked = false;
 // HTMLAudioElement-based iOS strategy
 let htmlAudio = null; // created synchronously from user gesture
 let soundEnabled = false; // toggle state
-const SoundURLs = { blink: null, beep: null }; // object URLs to pre-rendered tones
+const SoundURLs = {blink: null, beep: null}; // object URLs to pre-rendered tones
 
 function ensureAudioContext() {
     try {
@@ -182,7 +191,8 @@ function ensureAudioContext() {
             audioCtx = new AudioContext();
         }
         if (audioCtx.state === 'suspended') {
-            audioCtx.resume().catch(() => {});
+            audioCtx.resume().catch(() => {
+            });
         }
         return audioCtx;
     } catch (e) {
@@ -215,10 +225,10 @@ function setupAudioUnlock() {
             if (startButton) startButton.removeEventListener('click', unlock);
         }
     };
-    window.addEventListener('touchstart', unlock, { once: true });
-    window.addEventListener('mousedown', unlock, { once: true });
-    window.addEventListener('pointerdown', unlock, { once: true });
-    if (startButton) startButton.addEventListener('click', unlock, { once: true });
+    window.addEventListener('touchstart', unlock, {once: true});
+    window.addEventListener('mousedown', unlock, {once: true});
+    window.addEventListener('pointerdown', unlock, {once: true});
+    if (startButton) startButton.addEventListener('click', unlock, {once: true});
 }
 
 // --- Utility Functions ---
@@ -249,23 +259,36 @@ function audioBufferToWavBlob(buffer) {
 
     let offset = 0;
     // RIFF header
-    writeString(view, offset, 'RIFF'); offset += 4;
-    view.setUint32(offset, 36 + dataSize, true); offset += 4;
-    writeString(view, offset, 'WAVE'); offset += 4;
+    writeString(view, offset, 'RIFF');
+    offset += 4;
+    view.setUint32(offset, 36 + dataSize, true);
+    offset += 4;
+    writeString(view, offset, 'WAVE');
+    offset += 4;
 
     // fmt chunk
-    writeString(view, offset, 'fmt '); offset += 4;
-    view.setUint32(offset, 16, true); offset += 4; // SubChunk1Size
-    view.setUint16(offset, format, true); offset += 2; // AudioFormat
-    view.setUint16(offset, numOfChannels, true); offset += 2; // NumChannels
-    view.setUint32(offset, sampleRate, true); offset += 4; // SampleRate
-    view.setUint32(offset, byteRate, true); offset += 4; // ByteRate
-    view.setUint16(offset, blockAlign, true); offset += 2; // BlockAlign
-    view.setUint16(offset, bitDepth, true); offset += 2; // BitsPerSample
+    writeString(view, offset, 'fmt ');
+    offset += 4;
+    view.setUint32(offset, 16, true);
+    offset += 4; // SubChunk1Size
+    view.setUint16(offset, format, true);
+    offset += 2; // AudioFormat
+    view.setUint16(offset, numOfChannels, true);
+    offset += 2; // NumChannels
+    view.setUint32(offset, sampleRate, true);
+    offset += 4; // SampleRate
+    view.setUint32(offset, byteRate, true);
+    offset += 4; // ByteRate
+    view.setUint16(offset, blockAlign, true);
+    offset += 2; // BlockAlign
+    view.setUint16(offset, bitDepth, true);
+    offset += 2; // BitsPerSample
 
     // data chunk
-    writeString(view, offset, 'data'); offset += 4;
-    view.setUint32(offset, dataSize, true); offset += 4;
+    writeString(view, offset, 'data');
+    offset += 4;
+    view.setUint32(offset, dataSize, true);
+    offset += 4;
 
     // Interleave channels if needed and convert to 16-bit PCM
     if (numOfChannels === 2) {
@@ -291,13 +314,13 @@ function audioBufferToWavBlob(buffer) {
         }
     }
 
-    return new Blob([view], { type: 'audio/wav' });
+    return new Blob([view], {type: 'audio/wav'});
 }
 
 /**
  * Render a simple tone to a WAV Blob via OfflineAudioContext
  */
-async function renderToneBlob({ frequency = 440, duration = 0.2, sampleRate = 44100, type = 'sine', gain = 0.12 }) {
+async function renderToneBlob({frequency = 440, duration = 0.2, sampleRate = 44100, type = 'sine', gain = 0.12}) {
     const length = Math.max(1, Math.floor(duration * sampleRate));
     const offline = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, length, sampleRate);
     const osc = offline.createOscillator();
@@ -338,9 +361,21 @@ function setupSoundToggle() {
         // Toggle off
         if (soundEnabled) {
             soundEnabled = false;
-            try { if (htmlAudio) { htmlAudio.pause(); htmlAudio.src = ''; } } catch(_) {}
-            if (SoundURLs.blink) { URL.revokeObjectURL(SoundURLs.blink); SoundURLs.blink = null; }
-            if (SoundURLs.beep) { URL.revokeObjectURL(SoundURLs.beep); SoundURLs.beep = null; }
+            try {
+                if (htmlAudio) {
+                    htmlAudio.pause();
+                    htmlAudio.src = '';
+                }
+            } catch (_) {
+            }
+            if (SoundURLs.blink) {
+                URL.revokeObjectURL(SoundURLs.blink);
+                SoundURLs.blink = null;
+            }
+            if (SoundURLs.beep) {
+                URL.revokeObjectURL(SoundURLs.beep);
+                SoundURLs.beep = null;
+            }
             setBtn(false);
             return;
         }
@@ -353,8 +388,8 @@ function setupSoundToggle() {
         // Pre-render tones
         try {
             const [blinkBlob, beepBlob] = await Promise.all([
-                renderToneBlob({ frequency: 220, duration: 0.22, type: 'sine', gain: 0.12 }),
-                renderToneBlob({ frequency: 880, duration: 0.12, type: 'square', gain: 0.10 }),
+                renderToneBlob({frequency: 220, duration: 0.22, type: 'sine', gain: 0.12}),
+                renderToneBlob({frequency: 880, duration: 0.12, type: 'square', gain: 0.10}),
             ]);
             SoundURLs.blink = URL.createObjectURL(blinkBlob);
             SoundURLs.beep = URL.createObjectURL(beepBlob);
@@ -370,9 +405,11 @@ function setupSoundToggle() {
             if (SoundURLs.beep) {
                 htmlAudio.src = SoundURLs.beep;
                 const p = htmlAudio.play();
-                if (p && typeof p.catch === 'function') p.catch(() => {});
+                if (p && typeof p.catch === 'function') p.catch(() => {
+                });
             }
-        } catch (_) { /* ignore */ }
+        } catch (_) { /* ignore */
+        }
     });
 }
 
@@ -414,11 +451,11 @@ function playHarmonicChime(options = {}) {
 
         // Default partials: fundamental + harmonic series with a perfect fifth support
         const partials = (options.partials && options.partials.length ? options.partials : [
-            { ratio: 1.0, gain: 1.00, type: 'sine', detune: 0 },
-            { ratio: 2.0, gain: 0.35, type: 'sine', detune: -4 },
-            { ratio: 3.0, gain: 0.22, type: 'sine', detune: 3 },
-            { ratio: 1.5, gain: 0.18, type: 'sine', detune: 0 }, // perfect fifth support
-            { ratio: 4.0, gain: 0.12, type: 'sine', detune: 0 },
+            {ratio: 1.0, gain: 1.00, type: 'sine', detune: 0},
+            {ratio: 2.0, gain: 0.35, type: 'sine', detune: -4},
+            {ratio: 3.0, gain: 0.22, type: 'sine', detune: 3},
+            {ratio: 1.5, gain: 0.18, type: 'sine', detune: 0}, // perfect fifth support
+            {ratio: 4.0, gain: 0.12, type: 'sine', detune: 0},
         ]);
 
         // Build oscillators
@@ -441,7 +478,12 @@ function playHarmonicChime(options = {}) {
         });
 
         // Cleanup
-        setTimeout(() => { try { ctx.close(); } catch (e) {} }, (duration + 0.06) * 1000);
+        setTimeout(() => {
+            try {
+                ctx.close();
+            } catch (e) {
+            }
+        }, (duration + 0.06) * 1000);
     } catch (error) {
         console.error('Failed to play harmonic chime:', error);
     }
@@ -456,7 +498,8 @@ function playBlinkSound() {
         if (soundEnabled && htmlAudio && SoundURLs.blink) {
             htmlAudio.src = SoundURLs.blink;
             const p = htmlAudio.play();
-            if (p && typeof p.catch === 'function') p.catch(() => {});
+            if (p && typeof p.catch === 'function') p.catch(() => {
+            });
             return;
         }
         // Fallback: Web Audio
@@ -478,7 +521,7 @@ function playBlinkSound() {
         osc.connect(gain).connect(ctx.destination);
         osc.start(now);
         osc.stop(now + 0.22);
-    } catch(e) {
+    } catch (e) {
         console.error('Blink sound failed:', e);
     }
 }
@@ -492,7 +535,8 @@ function playCountdownBeep() {
         if (soundEnabled && htmlAudio && SoundURLs.beep) {
             htmlAudio.src = SoundURLs.beep;
             const p = htmlAudio.play();
-            if (p && typeof p.catch === 'function') p.catch(() => {});
+            if (p && typeof p.catch === 'function') p.catch(() => {
+            });
             return;
         }
         // Fallback: Web Audio
@@ -514,7 +558,7 @@ function playCountdownBeep() {
         osc.connect(gain).connect(ctx.destination);
         osc.start(now);
         osc.stop(now + 0.12);
-    } catch(e) {
+    } catch (e) {
         console.error('Countdown beep failed:', e);
     }
 }
@@ -584,6 +628,28 @@ function getExpandedExercises(rawExercises, interSetRestDuration) {
 }
 
 
+function getNextBreakIndex(startIdx, exercises) {
+    for (let i = startIdx + 1; i < exercises.length; i++) {
+        if (exercises[i].isInterSetRest) return i;
+    }
+    return -1;
+}
+
+function getVisibleExercises(currentIdx, exercises) {
+    const visible = [];
+    for (let i = 0; i < exercises.length; i++) {
+        if (!exercises[i].isInterSetRest) {
+            visible.push({...exercises[i], originalIndex: i});
+        }
+    }
+    // Add only the next break step
+    const nextBreakIdx = getNextBreakIndex(currentIdx, exercises);
+    if (nextBreakIdx !== -1) {
+        visible.push({...exercises[nextBreakIdx], originalIndex: nextBreakIdx});
+    }
+    return visible;
+}
+
 /**
  * Initializes the UI list and state based on the current exercises array.
  */
@@ -597,27 +663,25 @@ function initializeWorkout() {
     routineTitleEl.textContent = `Workout Plan (${routineName})`;
 
     // 3. Render Exercise List (using the expanded list for accurate display)
-    exerciseListEl.innerHTML = exercises.map((ex, index) => {
-        // Determine styling based on step type
+    const visibleExercises = getVisibleExercises(currentExerciseIndex, exercises);
+    exerciseListEl.innerHTML = visibleExercises.map((ex, index) => {
+        // Use ex.originalIndex for highlighting and IDs
         const isInterSetRest = ex.isInterSetRest;
         const isSideSplit = ex.name.includes(' - Left') || ex.name.includes(' - Right');
-
         let nameClasses = 'font-medium text-gray-700';
         let listItemClasses = 'bg-gray-100 shadow-sm hover:shadow-md hover:bg-emerald-50 transform hover:scale-[1.01]';
-
         if (isInterSetRest) {
             nameClasses = 'text-gray-600 text-sm italic';
             listItemClasses = 'bg-gray-200 text-gray-600 shadow-sm';
         } else if (isSideSplit) {
             nameClasses = 'text-gray-700 text-base';
         }
-
         return `
-            <li id="item-${index}" class="flex justify-between items-center p-4 rounded-xl transition-all duration-300 ${listItemClasses}">
-                <span class="${nameClasses} transition-colors duration-300">${ex.name}</span>
-                <span class="font-mono text-sm text-gray-500 transition-colors duration-300">${ex.reps ? `${ex.reps} reps` : formatTime(ex.duration)}</span>
-            </li>
-        `;
+        <li id="item-${ex.originalIndex}" class="flex justify-between items-center p-4 rounded-xl transition-all duration-300 ${listItemClasses}">
+            <span class="${nameClasses} transition-colors duration-300">${ex.name}</span>
+            <span class="font-mono text-sm text-gray-500 transition-colors duration-300">${ex.reps ? `${ex.reps} reps` : formatTime(ex.duration)}</span>
+        </li>
+    `;
     }).join('');
 
     // 4. Set initial state
@@ -652,7 +716,10 @@ function nextExercise() {
         const cur = exercises[currentExerciseIndex];
         const isRepsStep = cur && Number(cur.reps) > 0 && !cur.isInterSetRest;
         if (isRepsStep) {
-            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
             isRunning = false;
         }
         updateUI();
@@ -738,7 +805,7 @@ function updateUI() {
     if (!isRepsStep && timeRemaining <= 10 && !isRestOrCoolDown && isRunning) {
         timerDisplayEl.classList.add('text-red-500');
     } else if (isRestOrCoolDown) {
-         // Set rest periods to look neutral/calm
+        // Set rest periods to look neutral/calm
         timerDisplayEl.classList.remove('text-red-500');
         timerDisplayEl.classList.add('text-gray-500');
     } else {
@@ -821,7 +888,10 @@ function toggleTimer() {
     } else {
         // Start
         // Ensure iOS-safe audio is initialized synchronously within this user gesture
-        try { if (typeof enableSoundsForIOSQuick === 'function') enableSoundsForIOSQuick(); } catch (_) {}
+        try {
+            if (typeof enableSoundsForIOSQuick === 'function') enableSoundsForIOSQuick();
+        } catch (_) {
+        }
         const currentEx = exercises[currentExerciseIndex];
         const isRepsStep = currentEx && Number(currentEx.reps) > 0 && !currentEx.isInterSetRest;
         if (isRepsStep) {
@@ -954,7 +1024,7 @@ function ensureCustomWorkoutsInRoutinesAndSelector() {
                     name: ex.name,
                     duration: Number(ex.duration) || 0,
                     color: 'bg-neutral',
-                    ...(ex.sets ? { sets: Number(ex.sets) } : {})
+                    ...(ex.sets ? {sets: Number(ex.sets)} : {})
                 }))
             };
         }
@@ -973,18 +1043,27 @@ function ensureCustomWorkoutsInRoutinesAndSelector() {
 
 function onNextRepsClick() {
     // User confirms completion of reps, move to next step
-    try { playBlinkSound(); } catch(_) {}
+    try {
+        playBlinkSound();
+    } catch (_) {
+    }
     nextExercise();
     const cur = exercises[currentExerciseIndex];
     // If the next step is timed, resume timer automatically
     const isTimed = cur && (!cur.reps || cur.isInterSetRest) && Number(cur.duration) > 0;
     if (isTimed) {
-        if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
         isRunning = true;
         timerInterval = setInterval(timerTick, 1000);
     } else {
         // Ensure not running for another reps step
-        if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
         isRunning = false;
     }
     updateUI();
@@ -1010,10 +1089,17 @@ interSetBreakInput.addEventListener('change', () => {
 // Initialize the app when the window loads
 window.onload = async () => {
     // Prepare audio unlock for iOS (bind to first gesture and Start click)
-    try { setupAudioUnlock(); } catch(e) { /* ignore */ }
+    try {
+        setupAudioUnlock();
+    } catch (e) { /* ignore */
+    }
 
     // Initialize iOS HTMLAudioElement toggle
-    try { setupSoundToggle(); } catch (e) { console.warn('Sound toggle init failed', e); }
+    try {
+        setupSoundToggle();
+    } catch (e) {
+        console.warn('Sound toggle init failed', e);
+    }
 
     // Attempt to load JSON-defined default workout
     try {
@@ -1051,8 +1137,8 @@ function enableSoundsForIOSQuick() {
             try {
                 if (!SoundURLs.blink || !SoundURLs.beep) {
                     const [blinkBlob, beepBlob] = await Promise.all([
-                        renderToneBlob({ frequency: 220, duration: 0.22, type: 'sine', gain: 0.12 }),
-                        renderToneBlob({ frequency: 880, duration: 0.12, type: 'square', gain: 0.10 }),
+                        renderToneBlob({frequency: 220, duration: 0.22, type: 'sine', gain: 0.12}),
+                        renderToneBlob({frequency: 880, duration: 0.12, type: 'square', gain: 0.10}),
                     ]);
                     if (!SoundURLs.blink) SoundURLs.blink = URL.createObjectURL(blinkBlob);
                     if (!SoundURLs.beep) SoundURLs.beep = URL.createObjectURL(beepBlob);
@@ -1066,5 +1152,6 @@ function enableSoundsForIOSQuick() {
         return false;
     }
 }
+
 // Expose to window for tests page
 window.enableSoundsForIOSQuick = enableSoundsForIOSQuick;
