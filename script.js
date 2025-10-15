@@ -713,15 +713,11 @@ function nextExercise() {
         prevItem.querySelectorAll('span').forEach(span => span.style.color = '');
     }
 
-    // Advance to the next non-break exercise
-    do {
-        currentExerciseIndex++;
-    } while (
-        currentExerciseIndex < exercises.length && exercises[currentExerciseIndex].isInterSetRest
-    );
+    // Advance to the next step (exercise or break)
+    currentExerciseIndex++;
 
     if (currentExerciseIndex < exercises.length) {
-        // Move to the next exercise
+        // Move to the next step
         timeRemaining = exercises[currentExerciseIndex].duration;
         // If the new step is reps-driven, stop the timer immediately and require manual advance
         const cur = exercises[currentExerciseIndex];
@@ -846,31 +842,26 @@ function updateUI() {
     }
 
     // 2. Update List Highlighting
-    const item = document.getElementById(`item-${currentExerciseIndex}`);
-    if (item) {
-        exerciseListEl.querySelectorAll('li').forEach((li, index) => {
-            // Mark completed exercises
-            if (index < currentExerciseIndex) {
-                li.classList.add('opacity-50');
-                li.classList.remove('bg-active', 'text-white', 'scale-105', 'shadow-md', 'shadow-xl', 'bg-gray-100', 'bg-gray-200');
-                // Ensure span colors are reset to default
-                li.querySelectorAll('span').forEach(span => span.style.color = '');
-            } else if (index === currentExerciseIndex) {
-                // Highlight current exercise
-                li.classList.remove('opacity-50', 'bg-gray-100', 'bg-gray-200');
-                li.classList.add('bg-active', 'text-white', 'scale-[1.02]', 'shadow-xl');
-                // Ensure spans inside highlighted item are white
-                li.querySelectorAll('span').forEach(span => span.style.color = 'white');
-            } else {
-                // Upcoming exercises
-                li.classList.remove('opacity-50', 'bg-active', 'text-white', 'scale-[1.02]', 'shadow-xl');
-                // Reset to default look for upcoming items (handles inter-set rest background)
-                li.classList.add(exercises[index].isInterSetRest ? 'bg-gray-200' : 'bg-gray-100');
-                // Reset span colors for upcoming items
-                li.querySelectorAll('span').forEach(span => span.style.color = '');
-            }
-        });
-    }
+    exerciseListEl.querySelectorAll('li').forEach((li, index) => {
+        const ex = visibleExercises[index];
+        if (!ex) return;
+        // Mark completed exercises
+        if (ex.originalIndex < currentExerciseIndex) {
+            li.classList.add('opacity-50');
+            li.classList.remove('bg-active', 'text-white', 'scale-105', 'shadow-md', 'shadow-xl', 'bg-gray-100', 'bg-gray-200');
+            li.querySelectorAll('span').forEach(span => span.style.color = '');
+        } else if (ex.originalIndex === currentExerciseIndex) {
+            // Highlight current exercise
+            li.classList.remove('opacity-50', 'bg-gray-100', 'bg-gray-200');
+            li.classList.add('bg-active', 'text-white', 'scale-[1.02]', 'shadow-xl');
+            li.querySelectorAll('span').forEach(span => span.style.color = 'white');
+        } else {
+            // Upcoming exercises
+            li.classList.remove('opacity-50', 'bg-active', 'text-white', 'scale-[1.02]', 'shadow-xl');
+            li.classList.add(ex.isInterSetRest ? 'bg-gray-200' : 'bg-gray-100');
+            li.querySelectorAll('span').forEach(span => span.style.color = '');
+        }
+    });
 
     // 3. Update Button State
     const isInitialState = exercises.length > 0 && currentExerciseIndex === 0 && timeRemaining === exercises[0].duration;
