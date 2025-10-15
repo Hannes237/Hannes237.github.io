@@ -96,13 +96,22 @@ function buildStepsFromSchema(items, interSetRestDuration) {
                 pushStep(`${title}${setSuffix} - Left`, sideDuration, reps);
                 // Right
                 pushStep(`${title}${setSuffix} - Right`, sideDuration, reps);
+                // Insert break after bilateral pair, except after last set
+                if (s < sets || (!ctx.inSuperset && s === sets)) {
+                    if (interSetRestDuration > 0) {
+                        pushStep('Rest after bilateral', interSetRestDuration, undefined, {
+                            isInterSetRest: true,
+                            color: 'bg-gray-300'
+                        });
+                    }
+                }
             } else {
                 const d = hasDuration ? baseDuration : 0; // reps-driven steps use 0s to disable timer
                 pushStep(`${title}${setSuffix}`, d, reps);
             }
 
             // Add inter-set rest only for standalone exercises
-            if (!ctx.inSuperset && s < sets) {
+            if (!ctx.inSuperset && s < sets && !bilateral) {
                 pushStep('Rest between sets', interSetRestDuration, undefined, {
                     isInterSetRest: true,
                     color: 'bg-gray-300'
@@ -640,13 +649,16 @@ function getVisibleExercises(currentIdx, exercises) {
     for (let i = 0; i < exercises.length; i++) {
         if (!exercises[i].isInterSetRest) {
             visible.push({...exercises[i], originalIndex: i});
-            // Insert the next break immediately after the current exercise
-            if (i === currentIdx) {
+            // Only insert the next break if the current step is NOT a break
+            if (i === currentIdx && !exercises[currentIdx].isInterSetRest) {
                 const nextBreakIdx = getNextBreakIndex(currentIdx, exercises);
                 if (nextBreakIdx !== -1 && nextBreakIdx > currentIdx) {
                     visible.push({...exercises[nextBreakIdx], originalIndex: nextBreakIdx});
                 }
             }
+        } else if (i === currentIdx && exercises[currentIdx].isInterSetRest) {
+            // If the current step is a break, keep it visible
+            visible.push({...exercises[i], originalIndex: i});
         }
     }
     return visible;

@@ -17,7 +17,16 @@
   const importJsonBtn = document.getElementById('import-json-btn');
 
   // State
-  let workouts = loadWorkouts();
+  let workouts = [];
+  loadAllWorkouts().then(ws => {
+    workouts = ws;
+    renderWorkoutList();
+    if (workouts.length) {
+      onSelectWorkout(workouts[0].id);
+    } else {
+      addExerciseRow();
+    }
+  });
   let currentId = null; // currently edited workout id
 
   // Helpers
@@ -70,17 +79,21 @@
   }
 
   function addExerciseRow(data){
+    // Map external schema to editor format
+    const name = data?.name || data?.exercise_name || '';
+    const duration = data?.duration ?? '';
+    const sets = data?.sets ?? data?.reps ?? '';
     const tr = document.createElement('tr');
     tr.className = 'border-b last:border-b-0';
     tr.innerHTML = `
       <td class="py-2 pr-2">
-        <input type="text" class="w-full p-2 border border-gray-300 rounded-lg" placeholder="e.g., Push-ups" value="${data?.name ? escapeHtml(data.name) : ''}" />
+        <input type="text" class="w-full p-2 border border-gray-300 rounded-lg" placeholder="e.g., Push-ups" value="${escapeHtml(name)}" />
       </td>
       <td class="py-2 pr-2">
-        <input type="number" min="1" class="w-full p-2 border border-gray-300 rounded-lg" placeholder="30" value="${data?.duration ?? ''}" />
+        <input type="number" min="1" class="w-full p-2 border border-gray-300 rounded-lg" placeholder="30" value="${duration}" />
       </td>
       <td class="py-2 pr-2">
-        <input type="number" min="1" class="w-full p-2 border border-gray-300 rounded-lg" placeholder="1" value="${data?.sets ?? data?.reps ?? ''}" />
+        <input type="number" min="1" class="w-full p-2 border border-gray-300 rounded-lg" placeholder="1" value="${sets}" />
       </td>
       <td class="py-2">
         <button class="text-red-600 hover:bg-red-50 px-2 py-1 rounded">Remove</button>
@@ -250,6 +263,27 @@
     const text = (importText && importText.value) ? importText.value : '';
     const exs = kind === 'csv' ? parseCsvToExercises(text) : parseJsonToExercises(text);
     populateRowsWithExercises(exs);
+  }
+
+  async function loadDefaultWorkouts() {
+    try {
+      const res = await fetch('workouts.json', {cache: 'no-store'});
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      if (data && Array.isArray(data.workouts)) {
+        // Assign unique IDs for selection
+        return data.workouts.map((w, i) => ({...w, id: 'default_' + i}));
+      }
+    } catch (e) {
+      console.warn('Failed to load default workouts:', e);
+    }
+    return [];
+  }
+
+  async function loadAllWorkouts() {
+    const custom = loadWorkouts();
+    const defaults = await loadDefaultWorkouts();
+    return [...defaults, ...custom];
   }
 
   // Event bindings
