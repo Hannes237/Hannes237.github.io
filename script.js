@@ -1180,6 +1180,16 @@ interSetBreakInput.addEventListener('change', () => {
     loadRoutine(currentRoutineKey, true);
 });
 
+// Ensure wakelock is re-acquired if needed when returning to the app
+
+document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible') {
+        if (isRunning && wakeLock == null) {
+            await requestWakeLock();
+        }
+    }
+});
+
 // Initialize the app when the window loads
 window.onload = async () => {
     // Prepare audio unlock for iOS (bind to first gesture and Start click)
