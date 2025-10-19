@@ -402,7 +402,7 @@ function setupSoundToggle() {
         try {
             const [blinkBlob, beepBlob] = await Promise.all([
                 renderToneBlob({frequency: 220, duration: 0.22, type: 'sine', gain: 0.12}),
-                renderToneBlob({frequency: 880, duration: 0.12, type: 'square', gain: 0.10}),
+                renderToneBlob({frequency: 880, duration: 0.12, type: 'sine', gain: 0.10}),
             ]);
             SoundURLs.blink = URL.createObjectURL(blinkBlob);
             SoundURLs.beep = URL.createObjectURL(beepBlob);
@@ -560,7 +560,7 @@ function playCountdownBeep() {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
 
-        osc.type = 'square';
+        osc.type = 'sine';
         osc.frequency.setValueAtTime(880, now); // A5 high note
 
         // Snappy envelope
@@ -923,7 +923,7 @@ function playGongSound() {
         const now = ctx.currentTime;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.type = 'square';
+        osc.type = 'sine';
         osc.frequency.setValueAtTime(440, now); // 440Hz square wave
         gain.gain.setValueAtTime(0.0001, now);
         gain.gain.exponentialRampToValueAtTime(0.13, now + 0.01);
