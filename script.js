@@ -1268,3 +1268,46 @@ function enableSoundsForIOSQuick() {
 
 // Expose to window for tests page
 window.enableSoundsForIOSQuick = enableSoundsForIOSQuick;
+
+// Replace HTMLAudioElement playback with Web Audio API for beep and blink
+function playBeep() {
+    if (!soundEnabled) return;
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = 880;
+    gain.gain.value = 0.10;
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.12);
+    osc.onended = () => {
+        osc.disconnect();
+        gain.disconnect();
+    };
+}
+
+function playBlink() {
+    if (!soundEnabled) return;
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 220;
+    gain.gain.value = 0.12;
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.22);
+    osc.onended = () => {
+        osc.disconnect();
+        gain.disconnect();
+    };
+}
+
+// Wherever htmlAudio.play() for beep was used:
+// playBeep();
+// Wherever htmlAudio.play() for blink was used:
+// playBlink();
+
