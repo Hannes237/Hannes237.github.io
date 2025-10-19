@@ -79,6 +79,7 @@ function buildStepsFromSchema(items, interSetRestDuration) {
         const baseDuration = hasDuration ? Math.round(Number(item.duration)) : 0;
 
         for (let s = 1; s <= sets; s++) {
+            pushGongSound(); // Gong at start of each set
             const setSuffix = sets > 1 ? ` (Set ${s}/${sets})` : '';
 
             if (bilateral) {
@@ -118,6 +119,7 @@ function buildStepsFromSchema(items, interSetRestDuration) {
         if (supersetBlock) {
             const groupSets = Math.max(1, Number(item.sets) || 1);
             for (let gs = 1; gs <= groupSets; gs++) {
+                pushGongSound(); // Gong at start of each superset round
                 const roundStart = expanded.length;
                 supersetBlock.forEach((child, idx) => {
                     processExercise(child, {inSuperset: true});
@@ -913,6 +915,25 @@ function updateUI() {
     }
 }
 
+// --- Gong Synth ---
+function playGongSound() {
+    try {
+        const ctx = ensureAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(440, now); // 440Hz square wave
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.13, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.22);
+    } catch (e) { console.error('Gong sound error:', e); }
+}
+
 // Render all exercises in the expanded list
 function renderExerciseList() {
     exerciseListEl.innerHTML = exercises.map((ex, index) => {
@@ -1305,9 +1326,4 @@ function playBlink() {
         gain.disconnect();
     };
 }
-
-// Wherever htmlAudio.play() for beep was used:
-// playBeep();
-// Wherever htmlAudio.play() for blink was used:
-// playBlink();
 
