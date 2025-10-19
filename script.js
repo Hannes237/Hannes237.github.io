@@ -188,38 +188,33 @@ const bodyEl = document.body;
 const interSetBreakInput = document.getElementById('inter-set-break-input'); // NEW DOM element
 
 // --- Audio (iOS-friendly) ---
-let audioCtx = null;
-let audioUnlocked = false;
+/**
+ * SoundManager encapsulates all sound generation, playback, and toggling logic.
+ */
+const SoundManager = (() => {
+    let audioCtx = null;
+    let audioUnlocked = false;
+    let htmlAudio = null;
+    let soundEnabled = false;
+    const SoundURLs = { blink: null, beep: null };
 
-// HTMLAudioElement-based iOS strategy
-let htmlAudio = null; // created synchronously from user gesture
-let soundEnabled = false; // toggle state
-const SoundURLs = {blink: null, beep: null}; // object URLs to pre-rendered tones
-
-function ensureAudioContext() {
-    try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContext) return null;
-        if (!audioCtx) {
-            audioCtx = new AudioContext();
+    function ensureAudioContext() {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContext) return null;
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+            return audioCtx;
+        } catch (e) {
+            console.warn('AudioContext unavailable:', e);
+            return null;
         }
-        if (audioCtx.state === 'suspended') {
-            audioCtx.resume().catch(() => {
-            });
-        }
-        return audioCtx;
-    } catch (e) {
-        console.warn('AudioContext unavailable:', e);
-        return null;
     }
-}
 
-function setupAudioUnlock() {
-    const unlock = () => {
+    function unlockAudio() {
         try {
             const ctx = ensureAudioContext();
             if (ctx) {
-                // Play a near-silent tick to satisfy iOS gesture requirement
                 const now = ctx.currentTime;
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
@@ -229,20 +224,280 @@ function setupAudioUnlock() {
                 osc.stop(now + 0.01);
                 audioUnlocked = true;
             }
-        } catch (e) {
-            // ignore
-        } finally {
+        } catch (e) {}
+    }
+
+    function setupAudioUnlock(startButton) {
+        const unlock = () => {
+            unlockAudio();
             window.removeEventListener('touchstart', unlock);
             window.removeEventListener('mousedown', unlock);
             window.removeEventListener('pointerdown', unlock);
             if (startButton) startButton.removeEventListener('click', unlock);
+        };
+        window.addEventListener('touchstart', unlock, { once: true });
+        window.addEventListener('mousedown', unlock, { once: true });
+        window.addEventListener('pointerdown', unlock, { once: true });
+        if (startButton) startButton.addEventListener('click', unlock, { once: true });
+    }
+
+    function audioBufferToWavBlob(buffer) {
+        const numOfChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const format = 1; // PCM
+        const bitDepth = 16;
+
+        const samples = buffer.getChannelData(0);
+        const numFrames = buffer.length;
+        const blockAlign = numOfChannels * bitDepth / 8;
+        const byteRate = sampleRate * blockAlign;
+        const dataSize = numFrames * blockAlign;
+        const bufferSize = 44 + dataSize;
+        const arrayBuffer = new ArrayBuffer(bufferSize);
+        const view = new DataView(arrayBuffer);
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
         }
+
+        let offset = 0;
+        // RIFF header
+        writeString(view, offset, 'RIFF');
+        offset += 4;
+        view.setUint32(offset, 36 + dataSize, true);
+        offset += 4;
+        writeString(view, offset, 'WAVE');
+        offset += 4;
+
+        // fmt chunk
+        writeString(view, offset, 'fmt ');
+        offset += 4;
+        view.setUint32(offset, 16, true);
+        offset += 4; // SubChunk1Size
+        view.setUint16(offset, format, true);
+        offset += 2; // AudioFormat
+        view.setUint16(offset, numOfChannels, true);
+        offset += 2; // NumChannels
+        view.setUint32(offset, sampleRate, true);
+        offset += 4; // SampleRate
+        view.setUint32(offset, byteRate, true);
+        offset += 4; // ByteRate
+        view.setUint16(offset, blockAlign, true);
+        offset += 2; // BlockAlign
+        view.setUint16(offset, bitDepth, true);
+        offset += 2; // BitsPerSample
+
+        // data chunk
+        writeString(view, offset, 'data');
+        offset += 4;
+        view.setUint32(offset, dataSize, true);
+        offset += 4;
+
+        // Interleave channels if needed and convert to 16-bit PCM
+        if (numOfChannels === 2) {
+            const channelData0 = buffer.getChannelData(0);
+            const channelData1 = buffer.getChannelData(1);
+            let idx = 0;
+            for (let i = 0; i < numFrames; i++) {
+                // Left
+                let s = Math.max(-1, Math.min(1, channelData0[i]));
+                view.setInt16(offset + idx, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                idx += 2;
+                // Right
+                s = Math.max(-1, Math.min(1, channelData1[i]));
+                view.setInt16(offset + idx, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                idx += 2;
+            }
+        } else {
+            let idx = 0;
+            for (let i = 0; i < numFrames; i++) {
+                const s = Math.max(-1, Math.min(1, samples[i]));
+                view.setInt16(offset + idx, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                idx += 2;
+            }
+        }
+
+        return new Blob([view], {type: 'audio/wav'});
+    }
+
+    /**
+     * Render a simple tone to a WAV Blob via OfflineAudioContext
+     */
+    async function renderToneBlob({frequency = 440, duration = 0.2, sampleRate = 44100, type = 'sine', gain = 0.12}) {
+        const length = Math.max(1, Math.floor(duration * sampleRate));
+        const offline = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, length, sampleRate);
+        const osc = offline.createOscillator();
+        const g = offline.createGain();
+
+        osc.type = type;
+        osc.frequency.value = frequency;
+
+        // Simple envelope
+        const now = 0;
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(gain, now + Math.min(0.02, duration * 0.2));
+        g.gain.exponentialRampToValueAtTime(0.0001, Math.max(duration - 0.01, 0.03));
+
+        osc.connect(g).connect(offline.destination);
+        osc.start(now);
+        osc.stop(duration);
+        const rendered = await offline.startRendering();
+        return audioBufferToWavBlob(rendered);
+    }
+
+    function setupSoundToggle(btnId = 'sound-toggle', hintId = 'sound-toggle-hint') {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        const setBtn = (enabled) => {
+            btn.textContent = enabled ? 'Disable Sounds' : 'Enable Sounds (iOS)';
+            const hint = document.getElementById(hintId);
+            if (hint) hint.textContent = enabled ? 'Sounds enabled. Toggle to disable.' : 'Tap once to enable sounds on iPhone browsers. You can disable again anytime.';
+        };
+        setBtn(soundEnabled);
+        btn.addEventListener('click', async () => {
+            // Toggle off
+            if (soundEnabled) {
+                soundEnabled = false;
+                try {
+                    if (htmlAudio) {
+                        htmlAudio.pause();
+                        htmlAudio.src = '';
+                    }
+                } catch (_) {
+                }
+                if (SoundURLs.blink) {
+                    URL.revokeObjectURL(SoundURLs.blink);
+                    SoundURLs.blink = null;
+                }
+                if (SoundURLs.beep) {
+                    URL.revokeObjectURL(SoundURLs.beep);
+                    SoundURLs.beep = null;
+                }
+                setBtn(false);
+                return;
+            }
+
+            // Toggle on: create the HTMLAudioElement synchronously in this user gesture
+            htmlAudio = new Audio();
+            htmlAudio.preload = 'auto';
+            htmlAudio.crossOrigin = 'anonymous';
+
+            // Pre-render tones
+            try {
+                const [blinkBlob, beepBlob] = await Promise.all([
+                    renderToneBlob({frequency: 220, duration: 0.22, type: 'sine', gain: 0.12}),
+                    renderToneBlob({frequency: 880, duration: 0.12, type: 'sine', gain: 0.10}),
+                ]);
+                SoundURLs.blink = URL.createObjectURL(blinkBlob);
+                SoundURLs.beep = URL.createObjectURL(beepBlob);
+            } catch (e) {
+                console.warn('Tone pre-render failed, falling back to WebAudio only.', e);
+            }
+
+            soundEnabled = true;
+            setBtn(true);
+
+            // Play a confirmation beep using the shared element if we have it
+            try {
+                if (SoundURLs.beep) {
+                    htmlAudio.src = SoundURLs.beep;
+                    const p = htmlAudio.play();
+                    if (p && typeof p.catch === 'function') p.catch(() => {
+                    });
+                }
+            } catch (_) { /* ignore */
+            }
+        });
+    }
+
+    function playBlinkSound() {
+        try {
+            if (soundEnabled && htmlAudio && SoundURLs.blink) {
+                htmlAudio.src = SoundURLs.blink;
+                const p = htmlAudio.play();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+                return;
+            }
+            const ctx = ensureAudioContext();
+            if (!ctx) return;
+            const now = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(220, now); // Deep A3
+
+            // Envelope: quick attack, short decay
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.12, now + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.20);
+
+            osc.connect(gain).connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.22);
+        } catch (e) {
+            console.error('Blink sound failed:', e);
+        }
+    }
+
+    function playCountdownBeep() {
+        try {
+            if (soundEnabled && htmlAudio && SoundURLs.beep) {
+                htmlAudio.src = SoundURLs.beep;
+                const p = htmlAudio.play();
+                if (p && typeof p.catch === 'function') p.catch(() => {});
+                return;
+            }
+            const ctx = ensureAudioContext();
+            if (!ctx) return;
+            const now = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, now); // A5 high note
+
+            // Snappy envelope
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.10, now + 0.005);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.10);
+
+            osc.connect(gain).connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.12);
+        } catch (e) {
+            console.error('Countdown beep failed:', e);
+        }
+    }
+
+    function playGongSound() {
+        try {
+            const ctx = ensureAudioContext();
+            if (!ctx) return;
+            const now = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(440, now); // 440Hz
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.13, now + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+            osc.connect(gain).connect(ctx.destination);
+            osc.start(now);
+            osc.stop(now + 0.22);
+        } catch (e) { console.error('Gong sound error:', e); }
+    }
+
+    return {
+        setupAudioUnlock,
+        setupSoundToggle,
+        playBlinkSound,
+        playCountdownBeep,
+        playGongSound,
+        get soundEnabled() { return soundEnabled; },
     };
-    window.addEventListener('touchstart', unlock, {once: true});
-    window.addEventListener('mousedown', unlock, {once: true});
-    window.addEventListener('pointerdown', unlock, {once: true});
-    if (startButton) startButton.addEventListener('click', unlock, {once: true});
-}
+})();
 
 // --- Utility Functions ---
 
@@ -576,345 +831,6 @@ function playCountdownBeep() {
     }
 }
 
-/**
- * Expands exercises marked as two-sided and multi-set into individual steps.
- * Inserts a rest steps of duration `interSetRestDuration` between sets.
- * @param {Array} rawExercises - The list of exercises from the routine data.
- * @param {number} interSetRestDuration - The custom duration for rest between sets.
- * @returns {Array} The flattened list of all individual workout steps.
- */
-function getExpandedExercises(rawExercises, interSetRestDuration) {
-    const expanded = [];
-
-    for (const ex of rawExercises) {
-        const isRestStep = ex.name.toLowerCase().includes("rest") || ex.name.toLowerCase().includes("cool down");
-        const sets = ex.sets || 1;
-
-        if (isRestStep || (sets === 1 && !ex.isTwoSided)) {
-            // Simple single step (Rest, Cool Down, or 1-set, 1-sided exercise)
-            expanded.push(ex);
-            continue;
-        }
-
-        // Handle multi-set or two-sided exercises
-        for (let s = 1; s <= sets; s++) {
-            const setSuffix = sets > 1 ? ` (Set ${s}/${sets})` : '';
-            const baseName = ex.name;
-            const breakNote = (sets > 1 && s < sets && interSetRestDuration > 0) ? ` (break: ${interSetRestDuration}s)` : '';
-
-            if (ex.isTwoSided) {
-                const sideDuration = Math.round(ex.duration / 2);
-
-                // Left Side (no break note here; break comes after Right side)
-                expanded.push({
-                    name: `${baseName}${setSuffix} - Left`,
-                    duration: sideDuration,
-                    color: ex.color,
-                });
-                // Right Side (append break note if another set follows)
-                expanded.push({
-                    name: `${baseName}${setSuffix} - Right${breakNote}`,
-                    duration: sideDuration,
-                    color: ex.color,
-                });
-            } else {
-                // Single-sided/standard exercise with multiple sets
-                expanded.push({
-                    name: `${baseName}${setSuffix}${breakNote}`,
-                    duration: ex.duration,
-                    color: ex.color,
-                });
-            }
-
-            // Insert rest *only if* there are more sets coming up
-            if (sets > 1 && s < sets) {
-                expanded.push({
-                    name: `Rest between sets`,
-                    duration: interSetRestDuration, // Using the dynamic value
-                    color: "bg-gray-300",
-                    isInterSetRest: true // Flag for special styling
-                });
-            }
-        }
-    }
-    return expanded;
-}
-
-
-function getNextBreakIndex(startIdx, exercises) {
-    for (let i = startIdx + 1; i < exercises.length; i++) {
-        if (exercises[i].isInterSetRest) return i;
-    }
-    return -1;
-}
-
-function getVisibleExercises(currentIdx, exercises) {
-    const visible = [];
-    for (let i = 0; i < exercises.length; i++) {
-        if (!exercises[i].isInterSetRest) {
-            visible.push({...exercises[i], originalIndex: i});
-            // Only insert the next break if the current step is NOT a break
-            if (i === currentIdx && !exercises[currentIdx].isInterSetRest) {
-                const nextBreakIdx = getNextBreakIndex(currentIdx, exercises);
-                if (nextBreakIdx !== -1 && nextBreakIdx > currentIdx) {
-                    visible.push({...exercises[nextBreakIdx], originalIndex: nextBreakIdx});
-                }
-            }
-        } else if (i === currentIdx && exercises[currentIdx].isInterSetRest) {
-            // If the current step is a break, keep it visible
-            visible.push({...exercises[i], originalIndex: i});
-        }
-    }
-    return visible;
-}
-
-/**
- * Initializes the UI list and state based on the current exercises array.
- */
-function initializeWorkout() {
-    // 1. Calculate Total Time based on the expanded list
-    totalWorkoutDuration = exercises.reduce((sum, ex) => sum + ex.duration, 0);
-    totalTimeDisplayEl.textContent = `Total Time: ${formatTime(totalWorkoutDuration)}`;
-
-    // 2. Update Routine Title
-    const routineName = (workoutRoutines[currentRoutineKey] && workoutRoutines[currentRoutineKey].name) ? workoutRoutines[currentRoutineKey].name : 'Workout';
-    routineTitleEl.textContent = `Workout Plan (${routineName})`;
-
-    // 3. Render Exercise List (using the expanded list for accurate display)
-    const visibleExercises = getVisibleExercises(currentExerciseIndex, exercises);
-    exerciseListEl.innerHTML = visibleExercises.map((ex, index) => {
-        // Use ex.originalIndex for highlighting and IDs
-        const isInterSetRest = ex.isInterSetRest;
-        const isSideSplit = ex.name.includes(' - Left') || ex.name.includes(' - Right');
-        let nameClasses = 'font-medium text-gray-700';
-        let listItemClasses = 'bg-gray-100 shadow-sm hover:shadow-md hover:bg-emerald-50 transform hover:scale-[1.01]';
-        if (isInterSetRest) {
-            nameClasses = 'text-gray-600 text-sm italic';
-            listItemClasses = 'bg-gray-200 text-gray-600 shadow-sm';
-        } else if (isSideSplit) {
-            nameClasses = 'text-gray-700 text-base';
-        }
-        return `
-        <li id="item-${ex.originalIndex}" class="flex justify-between items-center p-4 rounded-xl transition-all duration-300 ${listItemClasses}">
-            <span class="${nameClasses} transition-colors duration-300">${ex.name}</span>
-            <span class="font-mono text-sm text-gray-500 transition-colors duration-300">${ex.reps ? `${ex.reps} reps` : formatTime(ex.duration)}</span>
-        </li>
-    `;
-    }).join('');
-
-    // 4. Set initial state
-    // Find the first non-break exercise
-    currentExerciseIndex = 0;
-    while (currentExerciseIndex < exercises.length && exercises[currentExerciseIndex].isInterSetRest) {
-        currentExerciseIndex++;
-    }
-    // Handle case where exercises list might be empty
-    timeRemaining = exercises.length > 0 ? exercises[currentExerciseIndex]?.duration || 0 : 0;
-    updateUI();
-}
-
-// --- Timer Logic ---
-
-/**
- * Advances to the next exercise or finishes the workout.
- */
-function nextExercise() {
-    // Remove highlighting from the current item
-    const prevItem = document.getElementById(`item-${currentExerciseIndex}`);
-    if (prevItem) {
-        // Reset classes for completed item
-        prevItem.classList.remove('bg-active', 'text-white', 'scale-105', 'shadow-md', 'shadow-xl');
-        prevItem.classList.add('opacity-50', 'bg-gray-100');
-        // Ensure text color is reset
-        prevItem.querySelectorAll('span').forEach(span => span.style.color = '');
-    }
-
-    // Advance to the next step (exercise or break)
-    currentExerciseIndex++;
-
-    if (currentExerciseIndex < exercises.length) {
-        // Move to the next step
-        timeRemaining = exercises[currentExerciseIndex].duration;
-        // If the new step is reps-driven, stop the timer immediately and require manual advance
-        const cur = exercises[currentExerciseIndex];
-        const isRepsStep = cur && Number(cur.reps) > 0 && !cur.isInterSetRest;
-        if (isRepsStep) {
-            if (timerInterval) {
-                clearInterval(timerInterval);
-                timerInterval = null;
-            }
-            isRunning = false;
-        }
-        updateUI();
-    } else {
-        // Workout finished
-        clearInterval(timerInterval);
-        timerInterval = null;
-        isRunning = false;
-        finishWorkout();
-    }
-}
-
-/**
- * Main timer loop, called every second.
- */
-function timerTick() {
-    if (!isRunning) return;
-
-    const currentEx = exercises[currentExerciseIndex];
-    const hasReps = currentEx && Number(currentEx.reps) > 0 && !currentEx.isInterSetRest;
-
-    // If this step is reps-driven, do not run a timer here.
-    if (hasReps) {
-        clearInterval(timerInterval);
-        timerInterval = null;
-        isRunning = false;
-        updateUI();
-        return;
-    }
-
-    timeRemaining--;
-
-    // Play bright beeps at the last 3 seconds for exercise steps (not rests)
-    const name = (currentEx?.name || '').toLowerCase();
-    const isRestStep = name.includes('rest') || name.includes('cool down') || currentEx?.isInterSetRest;
-    if (timeRemaining > 0 && timeRemaining <= 3 && !isRestStep) {
-        playCountdownBeep();
-    }
-
-    if (timeRemaining <= 0) {
-        playBlinkSound();
-        nextExercise();
-    } else {
-        updateUI();
-    }
-}
-
-/**
- * Updates all dynamic UI elements (timer, current exercise name, list highlighting).
- */
-function updateUI() {
-    // Handle case with no exercises loaded
-    if (!exercises || exercises.length === 0) {
-        timerDisplayEl.textContent = formatTime(0);
-        currentExerciseEl.textContent = "NO WORKOUT LOADED";
-        timerDisplayEl.classList.remove('text-red-500', 'text-gray-500');
-        // Clear list
-        exerciseListEl.innerHTML = '';
-        // Buttons state
-        startButton.textContent = "Start Workout";
-        startButton.disabled = true;
-        resetButton.disabled = true;
-        if (nextRepsButton) nextRepsButton.classList.add('hidden');
-        routineSelector.disabled = false;
-        interSetBreakInput.disabled = false;
-        return;
-    }
-
-    // --- DYNAMIC EXERCISE LIST RENDERING ---
-    const visibleExercises = getVisibleExercises(currentExerciseIndex, exercises);
-    exerciseListEl.innerHTML = visibleExercises.map((ex, index) => {
-        const isInterSetRest = ex.isInterSetRest;
-        const isSideSplit = ex.name.includes(' - Left') || ex.name.includes(' - Right');
-        let nameClasses = 'font-medium text-gray-700';
-        let listItemClasses = 'bg-gray-100 shadow-sm hover:shadow-md hover:bg-emerald-50 transform hover:scale-[1.01]';
-        if (isInterSetRest) {
-            nameClasses = 'text-gray-600 text-sm italic';
-            listItemClasses = 'bg-gray-200 text-gray-600 shadow-sm';
-        } else if (isSideSplit) {
-            nameClasses = 'text-gray-700 text-base';
-        }
-        return `
-        <li id="item-${ex.originalIndex}" class="flex justify-between items-center p-4 rounded-xl transition-all duration-300 ${listItemClasses}">
-            <span class="${nameClasses} transition-colors duration-300">${ex.name}</span>
-            <span class="font-mono text-sm text-gray-500 transition-colors duration-300">${ex.reps ? `${ex.reps} reps` : formatTime(ex.duration)}</span>
-        </li>
-    `;
-    }).join('');
-
-    // 1. Update Current Exercise and Timer
-    const currentEx = exercises[currentExerciseIndex];
-    const isRepsStep = currentEx && Number(currentEx.reps) > 0 && !currentEx.isInterSetRest;
-
-    if (isRepsStep) {
-        timerDisplayEl.textContent = "--:--";
-    } else {
-        timerDisplayEl.textContent = formatTime(timeRemaining);
-    }
-    currentExerciseEl.textContent = currentEx.name.toUpperCase();
-
-    // Change timer text color when running low
-    const isRestOrCoolDown = currentEx.name.toLowerCase().includes("rest") || currentEx.name.toLowerCase().includes("cool down");
-
-    if (!isRepsStep && timeRemaining <= 10 && !isRestOrCoolDown && isRunning) {
-        timerDisplayEl.classList.add('text-red-500');
-    } else if (isRestOrCoolDown) {
-        // Set rest periods to look neutral/calm
-        timerDisplayEl.classList.remove('text-red-500');
-        timerDisplayEl.classList.add('text-gray-500');
-    } else {
-        // Default color during exercise
-        timerDisplayEl.classList.remove('text-red-500', 'text-gray-500');
-    }
-
-    // 2. Update List Highlighting
-    exerciseListEl.querySelectorAll('li').forEach((li, index) => {
-        const ex = visibleExercises[index];
-        if (!ex) return;
-        // Mark completed exercises
-        if (ex.originalIndex < currentExerciseIndex) {
-            li.classList.add('opacity-50');
-            li.classList.remove('bg-active', 'text-white', 'scale-105', 'shadow-md', 'shadow-xl', 'bg-gray-100', 'bg-gray-200');
-            li.querySelectorAll('span').forEach(span => span.style.color = '');
-        } else if (ex.originalIndex === currentExerciseIndex) {
-            // Highlight current exercise
-            li.classList.remove('opacity-50', 'bg-gray-100', 'bg-gray-200');
-            li.classList.add('bg-active', 'text-white', 'scale-[1.02]', 'shadow-xl');
-            li.querySelectorAll('span').forEach(span => span.style.color = 'white');
-        } else {
-            // Upcoming exercises
-            li.classList.remove('opacity-50', 'bg-active', 'text-white', 'scale-[1.02]', 'shadow-xl');
-            li.classList.add(ex.isInterSetRest ? 'bg-gray-200' : 'bg-gray-100');
-            li.querySelectorAll('span').forEach(span => span.style.color = '');
-        }
-    });
-
-    // 3. Update Button State
-    const isInitialState = exercises.length > 0 && currentExerciseIndex === 0 && timeRemaining === exercises[0].duration;
-
-    if (isRepsStep) {
-        // Show Next button, disable Start, pause timer
-        if (nextRepsButton) nextRepsButton.classList.remove('hidden');
-        startButton.disabled = true;
-        startButton.textContent = isInitialState ? "Start Workout" : "Resume";
-        startButton.classList.add('bg-primary');
-        startButton.classList.remove('bg-gray-500');
-        resetButton.disabled = false;
-        routineSelector.disabled = false;
-        interSetBreakInput.disabled = false;
-    } else if (isRunning) {
-        if (nextRepsButton) nextRepsButton.classList.add('hidden');
-        startButton.textContent = "Pause";
-        startButton.classList.remove('bg-primary');
-        startButton.classList.add('bg-gray-500');
-        resetButton.disabled = false;
-        routineSelector.disabled = true;
-        interSetBreakInput.disabled = true; // Disable input while running
-    } else {
-        if (nextRepsButton) nextRepsButton.classList.add('hidden');
-        startButton.textContent = "Resume";
-        if (isInitialState) {
-            startButton.textContent = "Start Workout";
-        }
-        startButton.disabled = false;
-        startButton.classList.add('bg-primary');
-        startButton.classList.remove('bg-gray-500');
-        resetButton.disabled = isInitialState;
-        routineSelector.disabled = false;
-        interSetBreakInput.disabled = false; // Enable input when paused or reset
-    }
-}
-
 // --- Gong Synth ---
 function playGongSound() {
     try {
@@ -924,7 +840,7 @@ function playGongSound() {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(440, now); // 440Hz square wave
+        osc.frequency.setValueAtTime(440, now); // 440Hz
         gain.gain.setValueAtTime(0.0001, now);
         gain.gain.exponentialRampToValueAtTime(0.13, now + 0.01);
         gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
@@ -1272,7 +1188,7 @@ function enableSoundsForIOSQuick() {
                 if (!SoundURLs.blink || !SoundURLs.beep) {
                     const [blinkBlob, beepBlob] = await Promise.all([
                         renderToneBlob({frequency: 220, duration: 0.22, type: 'sine', gain: 0.12}),
-                        renderToneBlob({frequency: 880, duration: 0.12, type: 'square', gain: 0.10}),
+                        renderToneBlob({frequency: 880, duration: 0.12, type: 'sine', gain: 0.10}),
                     ]);
                     if (!SoundURLs.blink) SoundURLs.blink = URL.createObjectURL(blinkBlob);
                     if (!SoundURLs.beep) SoundURLs.beep = URL.createObjectURL(beepBlob);
@@ -1297,7 +1213,7 @@ function playBeep() {
     if (!ctx) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = 'square';
+    osc.type = 'sine';
     osc.frequency.value = 880;
     gain.gain.value = 0.10;
     osc.connect(gain).connect(ctx.destination);
