@@ -86,17 +86,17 @@ function buildStepsFromSchema(items, interSetRestDuration) {
                 const sideDuration = hasDuration ? baseDuration : 0;
                 // Left
                 pushStep(`${title}${setSuffix} - Left`, sideDuration, reps);
-                // Right
-                pushStep(`${title}${setSuffix} - Right`, sideDuration, reps);
-                // Insert break after bilateral pair, except after last set
-                if (s < sets || (!ctx.inSuperset && s === sets)) {
-                    if (interSetRestDuration > 0) {
-                        pushStep('Rest after bilateral', interSetRestDuration, undefined, {
+                pushStep('Rest after bilateral', interSetRestDuration, undefined, {
                             isInterSetRest: true,
                             color: 'bg-gray-300'
-                        });
-                    }
-                }
+                        })
+                // Right
+                pushStep(`${title}${setSuffix} - Right`, sideDuration, reps);
+                pushStep('Rest after bilateral', interSetRestDuration, undefined, {
+                            isInterSetRest: true,
+                            color: 'bg-gray-300'
+                        })
+                
             } else {
                 const d = hasDuration ? baseDuration : 0; // reps-driven steps use 0s to disable timer
                 pushStep(`${title}${setSuffix}`, d, reps);
