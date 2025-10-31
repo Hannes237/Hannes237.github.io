@@ -53,8 +53,7 @@ function buildStepsFromSchema(items, interSetRestDuration) {
         const dur = Number(duration) || 0;
         const step = {
             name,
-            // Allow duration 0 for reps-driven manual steps; keep >0 for timed steps
-            duration: hasReps ? 0 : Math.max(1, dur),
+            duration: Math.max(1, dur), // Always use the actual duration
             color: opts.color || 'bg-neutral'
         };
         if (hasReps) step.reps = Number(reps);
@@ -76,30 +75,30 @@ function buildStepsFromSchema(items, interSetRestDuration) {
         if (reps && hasDuration) {
             hasDuration = false; // ignore duration when reps exist
         }
-        const baseDuration = hasDuration ? Math.round(Number(item.duration)) : 0;
+        // Estimate duration if missing and reps exist
+        let baseDuration = 0;
+        if (hasDuration) {
+            baseDuration = Math.round(Number(item.duration));
+        } else if (reps) {
+            baseDuration = reps * 3; // 3 seconds per rep
+        }
 
         for (let s = 1; s <= sets; s++) {
-            // Removed build-time gong playback; will play at runtime when exercise actually starts.
             const setSuffix = sets > 1 ? ` (Set ${s}/${sets})` : '';
 
             if (bilateral) {
-                const sideDuration = hasDuration ? baseDuration : 0;
+                const sideDuration = baseDuration;
                 // Left
                 pushStep(`${title}${setSuffix} - Left`, sideDuration, reps);
-                pushStep('Rest after bilateral', interSetRestDuration, undefined, {
+                pushStep('Rest between bilateral', interSetRestDuration, undefined, {
                             isInterSetRest: true,
                             color: 'bg-gray-300'
                         })
                 // Right
                 pushStep(`${title}${setSuffix} - Right`, sideDuration, reps);
-                pushStep('Rest after bilateral', interSetRestDuration, undefined, {
-                            isInterSetRest: true,
-                            color: 'bg-gray-300'
-                        })
-                
+
             } else {
-                const d = hasDuration ? baseDuration : 0; // reps-driven steps use 0s to disable timer
-                pushStep(`${title}${setSuffix}`, d, reps);
+                pushStep(`${title}${setSuffix}`, baseDuration, reps);
             }
 
             // Add inter-set rest only for standalone exercises
