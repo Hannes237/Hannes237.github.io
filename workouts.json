@@ -30,6 +30,20 @@
           "sets": 3
         },
         {
+          "superset": [
+            {
+              "exercise_name": "Kopenhagen Plank",
+              "reps": 10,
+              "bilaterally": true
+            },
+            {
+              "exercise_name": "Squat Calf Raises",
+              "reps": 10
+            }
+          ],
+          "sets": 3
+        },
+        {
           "exercise_name": "Low Lunge to Half Split",
           "reps": 10,
           "bilaterally": true,
