@@ -3,21 +3,8 @@
     {
       "name": "Morning Mobility Mantra",
       "exercises": [
-
+        {"exercise_name": "Push Ups", "reps": 10},
         {
-          "superset": [
-            {
-              "exercise_name": "Kopenhagen Plank",
-              "reps": 10,
-              "bilaterally": true
-            },
-            {
-              "exercise_name": "Squat Calf Raises",
-              "reps": 10
-            }
-          ],
-          "sets": 3
-        },{
           "superset": [
             {
               "exercise_name": "Malasana Squat",
@@ -39,6 +26,20 @@
             {
               "exercise_name": "Downward Dog",
               "duration": 30
+            }
+          ],
+          "sets": 3
+        },
+        {
+          "superset": [
+            {
+              "exercise_name": "Kopenhagen Plank",
+              "reps": 10,
+              "bilaterally": true
+            },
+            {
+              "exercise_name": "Squat Calf Raises",
+              "reps": 10
             }
           ],
           "sets": 3

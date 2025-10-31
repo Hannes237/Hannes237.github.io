@@ -169,6 +169,9 @@ let timerInterval = null;
 let isRunning = false;
 let totalWorkoutDuration = 0;
 let wakeLock = null; // Wake Lock API object
+const workoutElapsedTimeEl = document.getElementById('workout-elapsed-time');
+let workoutElapsedTime = 0;
+let workoutElapsedInterval = null;
 
 // --- DOM elements ---
 const routineSelector = document.getElementById('routine-selector');
@@ -176,6 +179,7 @@ const routineTitleEl = document.getElementById('routine-title');
 const currentExerciseEl = document.getElementById('current-exercise');
 const timerDisplayEl = document.getElementById('timer-display');
 const totalTimeDisplayEl = document.getElementById('total-time-display');
+const workoutRemainingTimeEl = document.getElementById('workout-remaining-time'); // New element for workout countdown
 const startButton = document.getElementById('start-button');
 const resetButton = document.getElementById('reset-button');
 const nextRepsButton = document.getElementById('next-reps-button');
@@ -206,6 +210,7 @@ function releaseWakeLock() { if (wakeLock) { try { wakeLock.release(); } catch(_
 // --- Reset & Finish ---
 function resetWorkout() {
     clearInterval(timerInterval); timerInterval = null; isRunning = false; releaseWakeLock();
+    stopWorkoutElapsedTimer();
     bodyEl.classList.remove('page-blink'); bodyEl.style.backgroundColor='';
     loadRoutine(currentRoutineKey, true);
     currentExerciseEl.textContent = 'GET READY'; currentExerciseEl.classList.remove('text-active');
@@ -244,6 +249,16 @@ function loadRoutine(key, isReset = false) {
     if (nextRepsButton) nextRepsButton.classList.add('hidden');
 }
 
+// --- Helper ---
+function getWorkoutRemainingTime() {
+    if (!exercises.length || currentExerciseIndex >= exercises.length) return 0;
+    let sum = timeRemaining;
+    for (let i = currentExerciseIndex + 1; i < exercises.length; i++) {
+        sum += exercises[i].duration;
+    }
+    return sum;
+}
+
 // --- Formatting Helper ---
 function formatTime(seconds) {
     const m = Math.floor(seconds / 60);
@@ -273,10 +288,11 @@ function getVisibleExercises(currentIdx, list) {
 // --- UI Initialization ---
 function initializeWorkout() {
     totalWorkoutDuration = exercises.reduce((sum, ex) => sum + ex.duration, 0);
-    totalTimeDisplayEl.textContent = `Total Time: ${formatTime(totalWorkoutDuration)}`;
+    if (totalTimeDisplayEl) totalTimeDisplayEl.textContent = formatTime(totalWorkoutDuration);
+    if (workoutRemainingTimeEl) workoutRemainingTimeEl.textContent = formatTime(totalWorkoutDuration);
     const routineName = (workoutRoutines[currentRoutineKey] && workoutRoutines[currentRoutineKey].name) || 'Workout';
     routineTitleEl.textContent = `Workout Plan (${routineName})`;
-    const visible = getVisibleExercises(currentExerciseIndex, exercises);
+    const visible = getVisibleExercises(0, exercises); // Always start from index 0
     exerciseListEl.innerHTML = visible.map(ex => {
         const isRest = ex.isInterSetRest;
         const isSide = ex.name.includes(' - Left') || ex.name.includes(' - Right');
@@ -286,11 +302,12 @@ function initializeWorkout() {
         else if (isSide) { nameClasses = 'text-gray-700 text-base'; }
         return `<li id="item-${ex.originalIndex}" class="flex justify-between items-center p-4 rounded-xl transition-all duration-300 ${liClasses}">
             <span class="${nameClasses}">${ex.name}</span>
-            <span class="font-mono text-sm text-gray-500">${ex.reps ? `${ex.reps} reps` : formatTime(ex.duration)}</span>
+            <span class="font-mono text-sm text-gray-500">
         </li>`;
     }).join('');
     currentExerciseIndex = 0; while (currentExerciseIndex < exercises.length && exercises[currentExerciseIndex].isInterSetRest) currentExerciseIndex++;
     timeRemaining = exercises.length ? exercises[currentExerciseIndex].duration || 0 : 0;
+    resetWorkoutElapsedTimer();
     updateUI();
 }
 
@@ -322,6 +339,7 @@ function updateUI() {
     const cur = exercises[currentExerciseIndex];
     const isReps = cur && Number(cur.reps) > 0 && !cur.isInterSetRest;
     timerDisplayEl.textContent = isReps ? '--:--' : formatTime(timeRemaining);
+    if (workoutRemainingTimeEl) workoutRemainingTimeEl.textContent = formatTime(getWorkoutRemainingTime());
     currentExerciseEl.textContent = cur.name.toUpperCase();
     const isRest = cur.name.toLowerCase().includes('rest') || cur.name.toLowerCase().includes('cool down');
     if (!isReps && timeRemaining <= 10 && !isRest && isRunning) { timerDisplayEl.classList.add('text-red-500'); timerDisplayEl.classList.remove('text-gray-500'); }
@@ -354,6 +372,7 @@ function updateUI() {
         startButton.textContent = initial ? 'Start Workout' : 'Resume'; startButton.disabled = false;
         resetButton.disabled = initial; routineSelector.disabled = false; interSetBreakInput.disabled = false;
     }
+    if (workoutElapsedTimeEl) workoutElapsedTimeEl.textContent = formatTime(workoutElapsedTime);
 }
 
 // --- Exercise Progression ---
@@ -395,13 +414,18 @@ function timerTick() {
 }
 
 function toggleTimer() {
-    if (isRunning) { clearInterval(timerInterval); timerInterval = null; isRunning = false; updateUI(); return; }
+    if (isRunning) {
+        clearInterval(timerInterval); timerInterval = null; isRunning = false; updateUI();
+        stopWorkoutElapsedTimer();
+        return;
+    }
     try { ensureAudioContext(); } catch(_){}
     try { if (typeof enableSoundsForIOSQuick === 'function') enableSoundsForIOSQuick(); } catch(_){}
     const cur = exercises[currentExerciseIndex];
     const isReps = cur && Number(cur.reps) > 0 && !cur.isInterSetRest;
     if (isReps) { clearInterval(timerInterval); timerInterval=null; isRunning=false; updateUI(); return; }
     isRunning = true; requestWakeLock();
+    startWorkoutElapsedTimer();
     try {
         if (cur && !cur.isInterSetRest) {
             const lname = (cur.name||'').toLowerCase();
