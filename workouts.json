@@ -3,7 +3,6 @@
     {
       "name": "Morning Mobility Mantra",
       "exercises": [
-        {"exercise_name": "Push Ups", "reps": 10},
         {
           "superset": [
             {

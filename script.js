@@ -167,11 +167,15 @@ let currentExerciseIndex = 0;
 let timeRemaining = 0;
 let timerInterval = null;
 let isRunning = false;
+let isPaused = false; // True when user paused mid-workout
 let totalWorkoutDuration = 0;
 let wakeLock = null; // Wake Lock API object
 const workoutElapsedTimeEl = document.getElementById('workout-elapsed-time');
 let workoutElapsedTime = 0;
 let workoutElapsedInterval = null;
+let workoutElapsedStartMs = null;
+let heartbeatInterval = null;
+let workoutRemainingSeconds = 0;
 
 // --- DOM elements ---
 const routineSelector = document.getElementById('routine-selector');
@@ -198,19 +202,24 @@ function ensureAudioContext() { return window.SoundManager ? window.SoundManager
 
 // --- Wake Lock Helpers ---
 function requestWakeLock() {
+    // Ensure we always hold a wake lock at important moments (exercise start or pause)
+    if (wakeLock) return Promise.resolve(wakeLock);
     if ('wakeLock' in navigator) {
         return navigator.wakeLock.request('screen').then(lock => {
             wakeLock = lock;
             lock.addEventListener('release', () => { wakeLock = null; });
-        }).catch(e => console.warn('WakeLock request failed', e));
+            return lock;
+        }).catch(e => { console.warn('WakeLock request failed', e); return null; });
     }
+    return Promise.resolve(null);
 }
 function releaseWakeLock() { if (wakeLock) { try { wakeLock.release(); } catch(_){} wakeLock = null; } }
 
 // --- Reset & Finish ---
 function resetWorkout() {
-    clearInterval(timerInterval); timerInterval = null; isRunning = false; releaseWakeLock();
+    clearInterval(timerInterval); timerInterval = null; isRunning = false; isPaused = false; releaseWakeLock();
     stopWorkoutElapsedTimer();
+    stopHeartbeat();
     bodyEl.classList.remove('page-blink'); bodyEl.style.backgroundColor='';
     loadRoutine(currentRoutineKey, true);
     currentExerciseEl.textContent = 'GET READY'; currentExerciseEl.classList.remove('text-active');
@@ -224,12 +233,17 @@ function finishWorkout() {
     bodyEl.classList.add('page-blink');
     try { playCountdownBeep(); } catch(e) { console.error(e); }
     startButton.disabled = true; resetButton.disabled = false; routineSelector.disabled = false; interSetBreakInput.disabled = false;
+    isPaused = false;
+    stopWorkoutElapsedTimer();
+    workoutRemainingSeconds = 0;
+    stopHeartbeat();
     releaseWakeLock(); console.log('Workout Finished!');
 }
 
 // --- Routine Loader ---
 function loadRoutine(key, isReset = false) {
     if (isRunning && !isReset) return; // prevent changing while running
+    stopHeartbeat();
     currentRoutineKey = key;
     const routine = workoutRoutines[currentRoutineKey] || {};
     const rawBreak = parseInt(interSetBreakInput?.value || '3', 10);
@@ -266,6 +280,43 @@ function formatTime(seconds) {
     return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
+// Elapsed seconds helper (authoritative, second-precision)
+function getElapsedSeconds() {
+    const base = Math.max(0, Math.floor(workoutElapsedTime));
+    const delta = workoutElapsedStartMs != null ? Math.max(0, Math.floor((Date.now() - workoutElapsedStartMs) / 1000)) : 0;
+    return base + delta;
+}
+
+// --- Elapsed Workout Timer (overall runtime) ---
+function resetWorkoutElapsedTimer() {
+    // Clear any running interval (legacy)
+    if (workoutElapsedInterval) {
+        clearInterval(workoutElapsedInterval);
+        workoutElapsedInterval = null;
+    }
+    workoutElapsedStartMs = null;
+    workoutElapsedTime = 0;
+    if (workoutElapsedTimeEl) workoutElapsedTimeEl.textContent = formatTime(0);
+}
+
+function startWorkoutElapsedTimer() {
+    // Start a new measurement window if not already started
+    if (workoutElapsedStartMs == null) {
+        workoutElapsedStartMs = Date.now();
+    }
+}
+
+function stopWorkoutElapsedTimer() {
+    // Add the current span to the accumulated time
+    if (workoutElapsedStartMs != null) {
+        const delta = Math.max(0, Math.floor((Date.now() - workoutElapsedStartMs) / 1000));
+        workoutElapsedTime += delta;
+    }
+    workoutElapsedStartMs = null;
+    // No interval to clear; heartbeat drives UI updates
+    if (workoutElapsedTimeEl) workoutElapsedTimeEl.textContent = formatTime(Math.floor(workoutElapsedTime));
+}
+
 // --- Visibility / Expansion Helpers ---
 function getNextBreakIndex(startIdx, list) { for (let i = startIdx + 1; i < list.length; i++) if (list[i].isInterSetRest) return i; return -1; }
 function getVisibleExercises(currentIdx, list) {
@@ -288,6 +339,7 @@ function getVisibleExercises(currentIdx, list) {
 // --- UI Initialization ---
 function initializeWorkout() {
     totalWorkoutDuration = exercises.reduce((sum, ex) => sum + ex.duration, 0);
+    workoutRemainingSeconds = totalWorkoutDuration;
     if (totalTimeDisplayEl) totalTimeDisplayEl.textContent = formatTime(totalWorkoutDuration);
     if (workoutRemainingTimeEl) workoutRemainingTimeEl.textContent = formatTime(totalWorkoutDuration);
     const routineName = (workoutRoutines[currentRoutineKey] && workoutRoutines[currentRoutineKey].name) || 'Workout';
@@ -339,7 +391,7 @@ function updateUI() {
     const cur = exercises[currentExerciseIndex];
     const isReps = cur && Number(cur.reps) > 0 && !cur.isInterSetRest;
     timerDisplayEl.textContent = isReps ? '--:--' : formatTime(timeRemaining);
-    if (workoutRemainingTimeEl) workoutRemainingTimeEl.textContent = formatTime(getWorkoutRemainingTime());
+    if (workoutRemainingTimeEl) workoutRemainingTimeEl.textContent = formatTime(Math.max(0, workoutRemainingSeconds));
     currentExerciseEl.textContent = cur.name.toUpperCase();
     const isRest = cur.name.toLowerCase().includes('rest') || cur.name.toLowerCase().includes('cool down');
     if (!isReps && timeRemaining <= 10 && !isRest && isRunning) { timerDisplayEl.classList.add('text-red-500'); timerDisplayEl.classList.remove('text-gray-500'); }
@@ -361,7 +413,8 @@ function updateUI() {
     const initial = exercises.length && currentExerciseIndex === 0 && timeRemaining === exercises[0].duration;
     if (isReps) {
         if (nextRepsButton) nextRepsButton.classList.remove('hidden');
-        startButton.disabled = true; startButton.textContent = initial ? 'Start Workout' : 'Resume';
+        // Allow starting the overall elapsed timer even during reps-based steps
+        startButton.disabled = false; startButton.textContent = initial ? 'Start Workout' : 'Resume';
         resetButton.disabled = false; routineSelector.disabled = false; interSetBreakInput.disabled = false;
     } else if (isRunning) {
         if (nextRepsButton) nextRepsButton.classList.add('hidden');
@@ -372,7 +425,7 @@ function updateUI() {
         startButton.textContent = initial ? 'Start Workout' : 'Resume'; startButton.disabled = false;
         resetButton.disabled = initial; routineSelector.disabled = false; interSetBreakInput.disabled = false;
     }
-    if (workoutElapsedTimeEl) workoutElapsedTimeEl.textContent = formatTime(workoutElapsedTime);
+    if (workoutElapsedTimeEl) workoutElapsedTimeEl.textContent = formatTime(getElapsedSeconds());
 }
 
 // --- Exercise Progression ---
@@ -388,43 +441,71 @@ function nextExercise() {
         const cur = exercises[currentExerciseIndex];
         timeRemaining = cur.duration;
         const isReps = cur && Number(cur.reps) > 0 && !cur.isInterSetRest;
+        // Acquire wake lock at the start of each exercise (including rests and reps-based)
+        try { requestWakeLock(); } catch(_) {}
         try {
             if (cur && !cur.isInterSetRest) {
                 const lname = (cur.name||'').toLowerCase();
                 if (!lname.includes('rest') && !lname.includes('cool down')) playGongSound();
             }
         } catch(e){ console.warn('Gong error nextExercise', e); }
-        if (isReps) { clearInterval(timerInterval); timerInterval = null; isRunning = false; }
+        if (isReps) { isRunning = false; }
         updateUI();
     } else {
-        clearInterval(timerInterval); timerInterval = null; isRunning = false; finishWorkout();
+        isRunning = false; finishWorkout();
     }
 }
 
-function timerTick() {
-    if (!isRunning) return;
+function heartbeatTick() {
+    if (!exercises.length) { updateUI(); return; }
     const cur = exercises[currentExerciseIndex];
     const isReps = cur && Number(cur.reps) > 0 && !cur.isInterSetRest;
-    if (isReps) { clearInterval(timerInterval); timerInterval=null; isRunning=false; updateUI(); return; }
-    timeRemaining--;
-    const lname = (cur?.name||'').toLowerCase();
-    const isRest = lname.includes('rest') || lname.includes('cool down') || cur?.isInterSetRest;
-    if (timeRemaining > 0 && timeRemaining <= 3 && !isRest) { try { playBlinkSound(); } catch(e){ console.error(e); } }
-    if (timeRemaining <= 0) { nextExercise(); } else { updateUI(); }
+
+    // Decrement overall remaining when elapsed is running
+    if (workoutElapsedStartMs != null && workoutRemainingSeconds > 0) {
+        workoutRemainingSeconds--;
+    }
+
+    // Decrement current exercise countdown only for timed steps while running
+    if (!isReps && isRunning) {
+        timeRemaining--;
+        const lname = (cur?.name||'').toLowerCase();
+        const isRest = lname.includes('rest') || lname.includes('cool down') || cur?.isInterSetRest;
+        if (timeRemaining > 0 && timeRemaining <= 3 && !isRest) { try { playBlinkSound(); } catch(e){ console.error(e); } }
+        if (timeRemaining <= 0) { nextExercise(); updateUI(); return; }
+    }
+    // Sync UI once per tick so all timers update together
+    updateUI();
 }
+
+function startHeartbeat() { if (heartbeatInterval) return; heartbeatInterval = setInterval(heartbeatTick, 1000); }
+function stopHeartbeat() { if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; } }
 
 function toggleTimer() {
     if (isRunning) {
-        clearInterval(timerInterval); timerInterval = null; isRunning = false; updateUI();
+        // Pause: keep screen awake so the plan remains visible while paused
+        clearInterval(timerInterval); timerInterval = null; isRunning = false; isPaused = true; updateUI();
+        try { requestWakeLock(); } catch(_){}
         stopWorkoutElapsedTimer();
+        stopHeartbeat();
         return;
     }
+    // Start/Resume
     try { ensureAudioContext(); } catch(_){}
     try { if (typeof enableSoundsForIOSQuick === 'function') enableSoundsForIOSQuick(); } catch(_){}
     const cur = exercises[currentExerciseIndex];
     const isReps = cur && Number(cur.reps) > 0 && !cur.isInterSetRest;
-    if (isReps) { clearInterval(timerInterval); timerInterval=null; isRunning=false; updateUI(); return; }
-    isRunning = true; requestWakeLock();
+    if (isReps) {
+        // If user presses Start on a reps-based step, start the overall elapsed timer but stay on the reps step.
+        // User should use the "Next (Complete Reps)" button to advance when done.
+        startWorkoutElapsedTimer();
+        try { requestWakeLock(); } catch(_) {}
+        isPaused = false;
+        startHeartbeat();
+        updateUI();
+        return;
+    }
+    isRunning = true; isPaused = false; requestWakeLock();
     startWorkoutElapsedTimer();
     try {
         if (cur && !cur.isInterSetRest) {
@@ -432,7 +513,7 @@ function toggleTimer() {
             if (!lname.includes('rest') && !lname.includes('cool down')) playGongSound();
         }
     } catch(e){ console.warn('Gong start error', e); }
-    timerInterval = setInterval(timerTick, 1000);
+    startHeartbeat();
     updateUI();
 }
 
@@ -441,8 +522,9 @@ function onNextRepsClick() {
     nextExercise();
     const cur = exercises[currentExerciseIndex];
     const timed = cur && (!cur.reps || cur.isInterSetRest) && Number(cur.duration) > 0;
-    if (timed) { clearInterval(timerInterval); timerInterval = null; isRunning = true; timerInterval = setInterval(timerTick, 1000); }
-    else { clearInterval(timerInterval); timerInterval = null; isRunning = false; }
+    if (timed) { isRunning = true; }
+    else { isRunning = false; }
+    startHeartbeat();
     updateUI();
 }
 
@@ -452,7 +534,11 @@ resetButton.addEventListener('click', resetWorkout);
 if (nextRepsButton) nextRepsButton.addEventListener('click', onNextRepsClick);
 routineSelector.addEventListener('change', e => { bodyEl.classList.remove('page-blink'); loadRoutine(e.target.value); startButton.disabled=false; startButton.textContent='Start Workout'; resetButton.disabled=false; if (nextRepsButton) nextRepsButton.classList.add('hidden'); });
 interSetBreakInput.addEventListener('change', () => { loadRoutine(currentRoutineKey, true); });
-document.addEventListener('visibilitychange', async () => { if (document.visibilityState==='visible' && isRunning && !wakeLock) { try { await requestWakeLock(); } catch(_){} } });
+document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && (isRunning || isPaused) && !wakeLock) {
+        try { await requestWakeLock(); } catch(_){}
+    }
+});
 
 // --- Initialization ---
 window.onload = async () => {
