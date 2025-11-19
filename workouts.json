@@ -30,20 +30,6 @@
           "sets": 3
         },
         {
-          "superset": [
-            {
-              "exercise_name": "Kopenhagen Plank",
-              "reps": 10,
-              "bilaterally": true
-            },
-            {
-              "exercise_name": "Squat Calf Raises",
-              "reps": 10
-            }
-          ],
-          "sets": 3
-        },
-        {
           "exercise_name": "Low Lunge to Half Split",
           "reps": 10,
           "bilaterally": true,
@@ -58,6 +44,54 @@
             {
               "exercise_name": "Relaxed Child's Pose",
               "duration": 30
+            }
+          ],
+          "sets": 3
+        }
+      ]
+    },
+    {
+      "name": "Physio Quick Body Tune-Up",
+      "exercises": [
+        {
+          "superset": [
+            {
+              "exercise_name": "Copenhagen Plank",
+              "reps": 10,
+              "bilaterally": true
+            },
+            {
+              "exercise_name": "Cable Tibialis Anterior Raises",
+              "reps": 8,
+              "bilaterally": true
+            }
+          ],
+          "sets": 3
+        },
+        {
+          "superset": [
+            {
+              "exercise_name": "Seated Calf Raises",
+              "reps": 5
+            },
+            {
+              "exercise_name": "Seated Knee Extension with External Rotation",
+              "reps": 8,
+              "bilaterally": true
+            }
+          ],
+          "sets": 3
+        },
+        {
+          "superset": [
+            {
+              "exercise_name": "Neck Barbell Press",
+              "reps": 10
+            },
+            {
+              "exercise_name": "Banded Knee-Inward Resistance Step",
+              "reps": 10,
+              "bilaterally": true
             }
           ],
           "sets": 3
