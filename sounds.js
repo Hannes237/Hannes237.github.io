@@ -4,7 +4,7 @@
 let audioCtx = null;
 let audioUnlocked = false;
 let htmlAudio = null; // shared element for iOS autoplay reliability
-let soundEnabled = false; // user toggle
+let soundEnabled = true; // user toggle (default ON)
 const SoundURLs = { blink: null, beep: null }; // object URLs for pre-rendered tones
 
 function ensureAudioContext() {
@@ -153,6 +153,7 @@ function setupSoundToggle() {
 
 function playBlinkSound() {
     try {
+        if (!soundEnabled) return;
         if (soundEnabled && htmlAudio && SoundURLs.blink) {
             htmlAudio.src = SoundURLs.blink; const p = htmlAudio.play(); if (p && p.catch) p.catch(() => {}); return;
         }
@@ -168,6 +169,7 @@ function playBlinkSound() {
 
 function playCountdownBeep() {
     try {
+        if (!soundEnabled) return;
         if (soundEnabled && htmlAudio && SoundURLs.beep) {
             htmlAudio.src = SoundURLs.beep; const p = htmlAudio.play(); if (p && p.catch) p.catch(() => {}); return;
         }
@@ -183,6 +185,7 @@ function playCountdownBeep() {
 
 function playGongSound() {
     try {
+        if (!soundEnabled) return;
         const ctx = ensureAudioContext(); if (!ctx) return; const now = ctx.currentTime;
         const osc = ctx.createOscillator(); const gain = ctx.createGain();
         osc.type = 'sine'; osc.frequency.setValueAtTime(440, now);
@@ -195,8 +198,8 @@ function playGongSound() {
 
 function enableSoundsForIOSQuick() {
     try {
-        if (soundEnabled && htmlAudio) return true;
-        htmlAudio = new Audio(); htmlAudio.preload='auto'; htmlAudio.crossOrigin='anonymous'; soundEnabled = true;
+        // Prepare an HTMLAudio element and pre-render blobs if missing, but do not change user toggle.
+        if (!htmlAudio) { htmlAudio = new Audio(); htmlAudio.preload = 'auto'; htmlAudio.crossOrigin = 'anonymous'; }
         (async ()=>{ try { if (!SoundURLs.blink) SoundURLs.blink = URL.createObjectURL(await renderToneBlob({frequency:220,duration:0.22,type:'sine',gain:0.12})); if (!SoundURLs.beep) SoundURLs.beep = URL.createObjectURL(await renderToneBlob({frequency:880,duration:0.12,type:'square',gain:0.10})); } catch(_){ } })();
         return true;
     } catch(_) { return false; }

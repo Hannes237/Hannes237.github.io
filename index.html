@@ -57,6 +57,19 @@
             <!-- List items will be populated here by JavaScript -->
         </ul>
 
+        <!-- Sound Toggle (bottom of page, after workout plan) -->
+        <div class="mt-6 pt-4 border-t border-emerald-100">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-semibold text-gray-700">Exercise Sounds</p>
+                    <p id="sound-toggle-hint" class="text-xs text-gray-500 mt-1">Sounds enabled. Toggle to disable.</p>
+                </div>
+                <button id="sound-toggle" class="px-4 py-2 rounded-full text-sm font-bold shadow-sm bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.98] transition">
+                    Disable Sounds
+                </button>
+            </div>
+        </div>
+
         <!-- Inter-Set Break Control (collapsed at bottom) -->
         <details class="mb-2 mt-6">
             <summary class="cursor-pointer text-sm font-semibold text-gray-700">Break Between Sets</summary>
